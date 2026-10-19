@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {validJan,parseRegions,validateProduct,parseImport,mergeScan,productDate} from '../core.js';
+import {validJan,parseRegions,validateProduct,parseImport,mergeScan,productDate,management,isGray,compareInventory} from '../core.js';
 test('JANチェックデジット、桁数、先頭ゼロ',()=>{for(const j of ['4977330003109','4971666489040','4903110775003','0000000000000'])assert.equal(validJan(j),true);for(const j of ['4977330003108','497733000310','abc'])assert.equal(validJan(j),false);});
 test('読み取りは商品名・JANのみ。旧項目は抽出しない',()=>{const p=parseRegions({name:'かわいや 黒焼\nポテト 1本',exclusive:'¥584',inclusive:'¥631)',dept:'13',bottom:'-011 4977330003109 -001'});for(const k of ['allowance','priceExclusive','priceInclusive','dept'])assert.equal(p[k],'');assert.equal(p.jan,'4977330003109');assert.equal(p.name,'かわいや 黒焼 ポテト 1本');});
 test('左の数値で補完しない、未知のバーコード全文からJANを推測しない',()=>{const p=parseRegions({bottom:'-120 4971666489040'},[{format:'CODE_128',rawValue:'0114977330003109001'}]);assert.equal(p.allowance,'');assert.equal(p.jan,'4971666489040');assert.equal(p.priceInclusive,'');});
@@ -22,4 +22,22 @@ test('バックアップから撮影日・読込日・登録日を復元し、�
  for(const key of ['capturedAt','readAt','createdAt','updatedAt'])assert.equal(restored[key],old[key]);
  assert.equal(mergeScan(old,parseRegions({name:'手入力'})).capturedAt,old.capturedAt);
  assert.equal(mergeScan(old,{...parseRegions({name:'再撮影'}),capturedAt:'2026-10-21T00:00:00.000Z'}).capturedAt,'2026-10-21T00:00:00.000Z');
+});
+
+test('グレー背景は✕または明示的な基材0。空欄は0にしない',()=>{
+ for(const [p,expected] of [[{},false],[{materialCount:''},false],[{enabled:false},true],[{enabled:true,materialCount:'0'},true],[{enabled:false,materialCount:'3'},true],[{enabled:true,materialCount:'3'},false],[{materialCount:'00'},true]])assert.equal(isGray(p),expected);
+ assert.equal(management({materialCount:'003'}).materialCount,'3');
+ for(const materialCount of ['-1','1.5','abc','123456789',0])assert.throws(()=>management({materialCount}));
+});
+test('並べ替えは白→グレー、各グループ内は更新日ではなく登録日の新しい順',()=>{
+ const rows=[{id:'gray-new',enabled:false,createdAt:'2026-10-22T00:00:00Z'},{id:'white-old',createdAt:'2026-10-19T00:00:00Z',updatedAt:'2026-10-25T00:00:00Z'},{id:'gray-zero',materialCount:'0',createdAt:'2026-10-20T00:00:00Z'},{id:'white-new',createdAt:'2026-10-21T00:00:00Z'},{id:'unknown'}];
+ assert.deepEqual(rows.sort(compareInventory).map(p=>p.id),['white-new','white-old','unknown','gray-new','gray-zero']);
+});
+test('管理状態を再スキャンでも維持し、JSONに空欄と0を区別して保存',()=>{
+ const p={...parseRegions({name:'商品'}),enabled:false,materialCount:'0'};
+ assert.deepEqual(management(mergeScan(p,parseRegions({name:'再撮影'}))),{enabled:false,materialCount:'0'});
+ for(const materialCount of ['','0','12']){
+  const restored=parseImport(JSON.stringify({schemaVersion:1,products:[{...p,materialCount}]}))[0];assert.equal(restored.enabled,false);assert.equal(restored.materialCount,materialCount);
+ }
+ assert.throws(()=>parseImport(JSON.stringify({schemaVersion:1,products:[{...p,enabled:'false'}]})));
 });

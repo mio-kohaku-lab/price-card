@@ -1,5 +1,5 @@
 import {frameSample,CaptureGate} from './scan-policy.js';
-import {fields,emptyProduct,validJan,validateProduct,parseImport,mergeScan,productDate} from './core.js';
+import {fields,emptyProduct,validJan,validateProduct,parseImport,mergeScan,productDate,management,isGray,compareRegistered,compareInventory} from './core.js';
 import * as db from './db.js';
 import {crop,decode,recognize,straighten,releaseOCR} from './recognition.js';
 const app=document.querySelector('#app');let products=[],stream,timer,epoch=0,busy=false,currentImage=null,draft=null,wake=null,sessionCount=0,lastSavedSample=null,captureSample=null,capturedAt='';
@@ -8,8 +8,46 @@ function toast(s){$('#toast').textContent=s;$('#toast').style.display='block';se
 function ask(title,message,ok='実行'){return new Promise(resolve=>{const d=$('#modal');$('#modal-title').textContent=title;$('#modal-message').textContent=message;$('#modal-ok').textContent=ok;const done=v=>{d.close();resolve(v);};$('#modal-ok').onclick=()=>done(true);$('#modal-cancel').onclick=()=>done(false);d.oncancel=e=>{e.preventDefault();done(false);};d.showModal();});}
 function stop(){epoch++;clearTimeout(timer);stream?.getTracks().forEach(t=>t.stop());stream=null;wake?.release().catch(()=>{});wake=null;}
 function screen(html){stop();app.className='';app.innerHTML=html;window.scrollTo(0,0);}
-async function home(){if(busy)return;currentImage=null;draft=null;screen('<p>商品を読み込み中…</p>');try{products=await db.all();}catch(e){app.innerHTML='<h1>保存領域を開けません</h1><p>通常のChromeで開き直してください。プライベートモードや端末の空き容量も確認してください。</p>';return;}app.className='list-page';app.innerHTML=`<div class="list-toolbar"><h1>商品一覧</h1><button id="scan" class="primary">＋ 読み取る</button></div><div class="search"><input id="search" type="search" placeholder="商品名・JANで検索" aria-label="商品名・JANで検索"></div><h2>保存した商品 <span class="count">${products.length}件</span></h2><div id="list"></div><button id="manual">＋ 手入力で登録</button><footer><h2>データのバックアップ</h2><p class="muted">この端末のブラウザに保存されます。定期的にJSONを書き出してください。</p><div class="actions"><button id="export">書き出す</button><button id="import">読み込む</button></div><input class="file-input" id="backup" type="file" accept="application/json,.json"><p class="muted">端末内処理 · アカウント不要<br>店舗の公式アプリではありません。</p></footer>`;
-const list=()=>{const q=$('#search').value.normalize('NFKC').toLowerCase();const rows=products.filter(p=>(p.name+' '+p.jan).normalize('NFKC').toLowerCase().includes(q)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));$('#list').innerHTML=rows.length?`<table class="product-table"><thead><tr><th scope="col">商品名</th><th scope="col">JAN・日付</th></tr></thead><tbody>${rows.map(p=>{const date=productDate(p);return `<tr><td><button class="product-link" data-id="${esc(p.id)}">${esc(p.name)}</button></td><td class="product-code"><span>${esc(p.jan||'JAN未登録')}</span><small>${esc(date)}</small></td></tr>`;}).join('')}</tbody></table>`:`<div class="empty panel"><div class="empty-icon">▤</div><h2>${q?'一致する商品がありません':'まだ商品がありません'}</h2><p class="muted">${q?'検索する文字を変えてください。':'最初のプライスカードを登録しましょう。'}</p></div>`;document.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>detail(products.find(p=>p.id===b.dataset.id)));};list();$('#search').oninput=list;$('#scan').onclick=scanner;$('#manual').onclick=()=>editor({...emptyProduct(),barcodes:[]});$('#export').onclick=exportData;$('#import').onclick=()=>$('#backup').click();$('#backup').onchange=importData;
+async function home(){if(busy)return;currentImage=null;draft=null;screen('<p>商品を読み込み中…</p>');try{products=await db.all();}catch(e){app.innerHTML='<h1>保存領域を開けません</h1><p>通常のChromeで開き直してください。プライベートモードや端末の空き容量も確認してください。</p>';return;}app.className='list-page';app.innerHTML=`<div class="list-toolbar"><h1>商品一覧</h1><button id="scan" class="primary">＋ 読み取る</button></div><div class="search"><input id="search" type="search" placeholder="商品名・JANで検索" aria-label="商品名・JANで検索"></div><div class="inventory-heading"><h2>保存した商品 <span class="count">${products.length}件</span></h2><button id="sort-products">並べ替え</button></div><div id="list"></div><button id="manual">＋ 手入力で登録</button><footer><h2>データのバックアップ</h2><p class="muted">この端末のブラウザに保存されます。定期的にJSONを書き出してください。</p><div class="actions"><button id="export">書き出す</button><button id="import">読み込む</button></div><input class="file-input" id="backup" type="file" accept="application/json,.json"><p class="muted">端末内処理 · アカウント不要<br>店舗の公式アプリではありません。</p></footer>`;
+let order=products.slice().sort(compareRegistered).map(p=>p.id);
+const list=()=>{
+ const q=$('#search').value.normalize('NFKC').toLowerCase(),rank=new Map(order.map((id,i)=>[id,i]));
+ const rows=products.filter(p=>(p.name+' '+p.jan).normalize('NFKC').toLowerCase().includes(q)).sort((a,b)=>(rank.get(a.id)??Infinity)-(rank.get(b.id)??Infinity));
+ $('#list').innerHTML=rows.length?`<table class="product-table"><caption class="sr-only">保存した商品。商品名を押すと詳細を表示します。</caption><tbody>${rows.map(p=>{
+  const m=management(p);return `<tr data-product="${esc(p.id)}" class="${isGray(p)?'is-gray':''}"><td>
+  <div class="product-name-scroll"><button class="product-link" data-id="${esc(p.id)}">${esc(p.name)}</button></div>
+  <div class="product-meta"><span>${esc(p.jan||'JAN未登録')}</span><small>${esc(productDate({createdAt:p.createdAt}))}</small></div>
+  <div class="product-controls"><span class="management-status" role="status"></span><label>基材：<input class="material-count" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8" value="${esc(m.materialCount)}" aria-label="${esc(p.name)}の基材数" autocomplete="off" enterkeyhint="done"></label><button class="state-toggle" aria-label="${esc(p.name)}の〇✕切り替え" aria-pressed="${!m.enabled}">${m.enabled?'〇':'✕'}</button></div>
+  </td></tr>`;
+ }).join('')}</tbody></table>`:`<div class="empty panel"><h2>${q?'一致する商品がありません':'まだ商品がありません'}</h2><p class="muted">${q?'検索する文字を変えてください。':'最初のプライスカードを登録しましょう。'}</p></div>`;
+ document.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>detail(products.find(p=>p.id===b.dataset.id)));
+ document.querySelectorAll('[data-product]').forEach(row=>{
+  const id=row.dataset.product,input=row.querySelector('.material-count'),toggle=row.querySelector('.state-toggle'),status=row.querySelector('.management-status');
+  const paint=p=>{const m=management(p);input.value=m.materialCount;toggle.textContent=m.enabled?'〇':'✕';toggle.setAttribute('aria-pressed',String(!m.enabled));row.classList.toggle('is-gray',isGray(p));};
+  const save=async patch=>{
+   const previous=products.find(p=>p.id===id);
+   try{management({...previous,...patch});}catch(e){input.value=management(previous).materialCount;status.textContent=e.message;return;}
+   paint({...previous,...patch});input.disabled=toggle.disabled=true;status.textContent='保存中…';
+   try{const saved=await saveManagement(id,patch);paint(saved);status.textContent='';}
+   catch(e){paint(products.find(p=>p.id===id)||previous);status.textContent='保存できませんでした。再度お試しください。';}
+   finally{input.disabled=toggle.disabled=false;}
+  };
+  input.onchange=()=>save({materialCount:input.value.trim()});
+  input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();input.blur();}};
+  toggle.onclick=()=>save({enabled:!management(products.find(p=>p.id===id)).enabled});
+ });
+};
+$('#sort-products').onclick=async()=>{await managementQueue;order=products.slice().sort(compareInventory).map(p=>p.id);list();toast('白背景 → グレー背景、それぞれ登録日の新しい順に並べました');};
+list();$('#search').oninput=list;$('#scan').onclick=scanner;$('#manual').onclick=()=>editor({...emptyProduct(),barcodes:[]});$('#export').onclick=exportData;$('#import').onclick=()=>$('#backup').click();$('#backup').onchange=importData;
+}
+let managementQueue=Promise.resolve();
+function saveManagement(id,patch){
+ const task=managementQueue.then(async()=>{
+  const latest=(await db.all()).find(p=>p.id===id);if(!latest)throw Error('商品が削除されています');
+  const updated={...latest,...management({...latest,...patch}),updatedAt:new Date().toISOString()};
+  await db.write([updated]);products=products.map(p=>p.id===id?updated:p);return updated;
+ });
+ managementQueue=task.catch(()=>{});return task;
 }
 function scanner(){
  if(busy)return;currentImage=null;captureSample=null;capturedAt='';
