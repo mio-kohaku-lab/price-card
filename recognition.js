@@ -29,10 +29,26 @@ export async function recognize(canvas,onProgress){
  for(const [key,[x,y,w,h]]of Object.entries(boxes)){
  if(key==='bottom'){await worker.reinitialize('eng');language='eng';}
  await worker.setParameters({tessedit_pageseg_mode:key==='name'?'6':'7',tessedit_char_whitelist:key==='name'?'':key==='bottom'?'0123456789- ':'0123456789'});
- const part=crop(canvas,x*canvas.width,y*canvas.height,w*canvas.width,h*canvas.height,Math.max(1,1600/canvas.width));
+ let part=crop(canvas,x*canvas.width,y*canvas.height,w*canvas.width,h*canvas.height,Math.max(1,1600/canvas.width));
+ if(key==='name')part=prepareNameImage(part);
  const r=await worker.recognize(part);regions[key]=r.data.text;confidence[key]=r.data.confidence;
  }
  }catch(e){warning=`OCRに失敗しました。空欄は手入力してください。${e?.message||String(e)}`;await releaseOCR();}finally{progress=()=>{};}
  const trusted=Object.fromEntries(Object.entries(regions).map(([key,value])=>[key,confidence[key]>=60?value:'']));
  return {product:parseRegions(trusted,barcodes),barcodes,regions,confidence,warning};
+}
+
+// Grayscale plus bounded contrast stretch; retain antialiasing rather than binarizing.
+export function enhanceNamePixels(data){
+ const histogram=new Uint32Array(256),values=new Uint8Array(data.length/4);
+ for(let i=0;i<values.length;i++){const at=i*4,v=Math.round(.299*data[at]+.587*data[at+1]+.114*data[at+2]);values[i]=v;histogram[v]++;}
+ const percentile=q=>{let n=0;for(let v=0;v<256;v++){n+=histogram[v];if(n>=values.length*q)return v;}return 255;};
+ const low=percentile(.02),high=percentile(.98),stretch=high-low>=40;
+ for(let i=0;i<values.length;i++){const v=stretch?Math.max(0,Math.min(255,Math.round((values[i]-low)*255/(high-low)))):values[i],at=i*4;data[at]=data[at+1]=data[at+2]=v;data[at+3]=255;}
+ return data;
+}
+export function prepareNameImage(source){
+ const ctx=source.getContext('2d'),pixels=ctx.getImageData(0,0,source.width,source.height);enhanceNamePixels(pixels.data);ctx.putImageData(pixels,0,0);
+ const out=document.createElement('canvas'),padding=24;out.width=source.width+padding*2;out.height=source.height+padding*2;
+ const output=out.getContext('2d');output.fillStyle='#fff';output.fillRect(0,0,out.width,out.height);output.drawImage(source,padding,padding);return out;
 }

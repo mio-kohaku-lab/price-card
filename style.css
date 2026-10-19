@@ -16,3 +16,5 @@ header{height:32px;padding:0 12px;gap:8px}header a{font-size:16px;line-height:1;
 
 .scan-page .guide{left:50%;top:50%;width:64%;height:auto;max-width:280px;transform:translate(-50%,-50%);aspect-ratio:1}.scan-page .guide span{font-size:11px;bottom:-34px}.product-table td{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}.product-table input{-webkit-user-select:text;user-select:text}
 @media(orientation:landscape)and(max-height:500px){.scan-page .guide{width:180px;max-width:64%;height:auto}}
+
+.guide .name-zone{position:absolute;left:3%;top:2%;width:94%;height:40%;border:1px dashed #fff9;border-bottom:2px dashed #f3ffb0;background:#ffffff08}.name-zone b{position:absolute;top:-20px;left:0;color:white;font-size:10px;font-weight:400;white-space:nowrap}
