@@ -13,5 +13,12 @@ export function parseRegions(regions,decoded=[]){
  return p;
 }
 export function validateProduct(p){for(const k of Object.keys(fields))if(typeof p[k]!=='string'||p[k].length>300)throw Error('商品項目の形式が不正です');for(const k of ['priceInclusive','priceExclusive'])if(p[k]&&!/^\d{1,8}$/.test(p[k]))throw Error('価格は8桁以内の数字で入力してください');if(p.dept&&!/^\d+$/.test(p.dept))throw Error('DEPTは数字で入力してください');if(p.allowance&&!/^-\d+$/.test(p.allowance))throw Error('販売許容数値は -001 のように入力してください');if(p.jan&&!validJan(p.jan))throw Error('JANの桁数・チェックデジットが正しくありません');if(!p.name.trim())throw Error('商品名を入力してください');return p;}
-export function parseImport(text){const d=JSON.parse(text);if(d.schemaVersion!==1||!Array.isArray(d.products)||d.products.length>10000)throw Error('対応していないバックアップ形式です');const seen=new Set();return d.products.map(p=>{validateProduct(p);if(p.jan&&seen.has(p.jan))throw Error('ファイル内に重複JANがあります');if(p.jan)seen.add(p.jan);return {...Object.fromEntries(Object.keys(fields).map(k=>[k,p[k]])),barcodeJan:typeof p.barcodeJan==='string'?p.barcodeJan:'',barcodes:Array.isArray(p.barcodes)?p.barcodes.filter(b=>typeof b.rawValue==='string'&&b.rawValue.length<1000&&typeof b.format==='string').map(b=>({rawValue:b.rawValue,format:b.format})):[]};});}
+export function parseImport(text){const d=JSON.parse(text);if(d.schemaVersion!==1||!Array.isArray(d.products)||d.products.length>10000)throw Error('対応していないバックアップ形式です');const seen=new Set();return d.products.map(p=>{validateProduct(p);if(p.jan&&seen.has(p.jan))throw Error('ファイル内に重複JANがあります');if(p.jan)seen.add(p.jan);return {...Object.fromEntries(Object.keys(fields).map(k=>[k,p[k]])),...Object.fromEntries(['capturedAt','readAt','createdAt','updatedAt'].filter(k=>typeof p[k]==='string'&&/^\d{4}-\d{2}-\d{2}T/.test(p[k])&&Number.isFinite(Date.parse(p[k]))).map(k=>[k,p[k]])),barcodeJan:typeof p.barcodeJan==='string'?p.barcodeJan:'',barcodes:Array.isArray(p.barcodes)?p.barcodes.filter(b=>typeof b.rawValue==='string'&&b.rawValue.length<1000&&typeof b.format==='string').map(b=>({rawValue:b.rawValue,format:b.format})):[]};});}
 
+
+export function productDate(p){
+ const key=['capturedAt','readAt','createdAt'].find(k=>typeof p[k]==='string'&&Number.isFinite(Date.parse(p[k])));
+ if(!key)return '日付不明';
+ const d=new Date(p[key]);const value=`${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+ return `${{capturedAt:'撮影',readAt:'読込',createdAt:'登録'}[key]} ${value}`;
+}
