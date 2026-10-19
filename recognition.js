@@ -11,25 +11,28 @@ export async function decode(canvas){
  if(!found.length&&window.ZXing)try{const hints=new Map([[ZXing.DecodeHintType.TRY_HARDER,true]]);const reader=new ZXing.MultiFormatReader();reader.setHints(hints);const source=new ZXing.HTMLCanvasElementLuminanceSource(canvas);const r=reader.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(source)));found.push({rawValue:r.getText(),format:ZXing.BarcodeFormat[r.getBarcodeFormat()]});}catch{}
  return found;
 }
-let worker;
+let worker,language,progress=()=>{};
+export async function releaseOCR(){const w=worker;worker=null;language=null;if(w)await w.terminate();}
 export async function recognize(canvas,onProgress){
  const barcodes=await decode(canvas);const regions={},confidence={};let warning='';
  try{
  if(!window.Tesseract)throw Error('OCRライブラリを読み込めません');
- onProgress('OCRを準備しています。初回は時間がかかります…');
+ progress=onProgress;
+ onProgress(worker?'文字を読み取っています…':'OCRを準備しています。初回は時間がかかります…');
  const vendor=new URL('./vendor/',import.meta.url).href;
- worker=await Tesseract.createWorker('jpn+eng',1,{workerPath:vendor+'worker.min.js',corePath:vendor,langPath:vendor,logger:m=>{if(m.status==='recognizing text')onProgress(`文字を読み取り中… ${Math.round(m.progress*100)}%`);}});
+ if(!worker){worker=await Tesseract.createWorker('jpn+eng',1,{workerPath:vendor+'worker.min.js',corePath:vendor,langPath:vendor,logger:m=>{if(m.status==='recognizing text')progress(`文字を読み取り中… ${Math.round(m.progress*100)}%`);}});language='jpn+eng';}
+ if(language!=='jpn+eng'){await worker.reinitialize('jpn+eng');language='jpn+eng';}
  // Relative regions follow the supplied card layout. The crop must contain exactly one card.
  const boxes={name:[.03,.02,.94,.40]};
  // Decode JAN first; only OCR the printed code when decoding did not supply it.
  if(!decodedJan(barcodes))boxes.bottom=[.015,.735,.97,.115];
  for(const [key,[x,y,w,h]]of Object.entries(boxes)){
- if(key==='bottom')await worker.reinitialize('eng');
+ if(key==='bottom'){await worker.reinitialize('eng');language='eng';}
  await worker.setParameters({tessedit_pageseg_mode:key==='name'?'6':'7',tessedit_char_whitelist:key==='name'?'':key==='bottom'?'0123456789- ':'0123456789'});
  const part=crop(canvas,x*canvas.width,y*canvas.height,w*canvas.width,h*canvas.height,Math.max(1,1600/canvas.width));
  const r=await worker.recognize(part);regions[key]=r.data.text;confidence[key]=r.data.confidence;
  }
- }catch(e){warning=`OCRに失敗しました。空欄は手入力してください。${e?.message||String(e)}`;}finally{if(worker){await worker.terminate();worker=null;}}
+ }catch(e){warning=`OCRに失敗しました。空欄は手入力してください。${e?.message||String(e)}`;await releaseOCR();}finally{progress=()=>{};}
  const trusted=Object.fromEntries(Object.entries(regions).map(([key,value])=>[key,confidence[key]>=60?value:'']));
  return {product:parseRegions(trusted,barcodes),barcodes,regions,confidence,warning};
 }

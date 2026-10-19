@@ -28,7 +28,7 @@ jobs:
       - name: Prepare public files
         run: |
           mkdir public
-          cp index.html style.css app.js core.js db.js recognition.js sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png public/
+          cp index.html style.css app.js core.js scan-policy.js db.js recognition.js sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png public/
           cp -r vendor public/
       - uses: actions/upload-pages-artifact@v3
         with:
