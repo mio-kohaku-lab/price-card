@@ -29,3 +29,6 @@ header{height:32px;padding:0 12px;gap:8px}header a{font-size:16px;line-height:1;
 
 /* Flat, narrow controls. */
 button,.button,.category-tabs span{border-radius:0!important;box-shadow:none!important}.product-meta input{border-radius:0}.list-page{padding-top:3px}.list-toolbar h1{font-size:16px}.list-toolbar button,.category-filters button,.inventory-heading button,.list-page>#manual,.list-page>footer .actions button{min-height:24px;padding:2px 8px;font-size:12px;line-height:1.4}.category-filters{margin:4px 10px;gap:4px}.category-filters button{padding:2px 3px}.inventory-heading{margin-bottom:2px}.inventory-heading h2{font-size:12px}.inventory-heading .count{border-radius:0;padding:1px 5px;font-size:11px}.list-page>#manual{margin:5px 10px}.list-page>footer{margin-top:5px;padding-top:6px}.list-page>footer h2{font-size:14px;margin-bottom:3px}.list-page>footer .actions{margin:5px 0}.list-page>footer p{margin:3px 0}
+
+/* Give only the inventory title/action row more breathing room. */
+.list-page .list-toolbar{padding:10px 12px 8px;min-height:58px;gap:12px}.list-page .list-toolbar h1{font-size:18px;line-height:1.4}.list-page .list-toolbar button{min-height:36px;padding:7px 12px;font-size:14px;line-height:1.4;white-space:nowrap}
