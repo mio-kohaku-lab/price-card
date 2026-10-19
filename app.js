@@ -72,24 +72,38 @@ async function startCamera(gate=new CaptureGate(lastSavedSample)){
   if(token!==epoch){s.getTracks().forEach(t=>t.stop());return;}
   stream=s;$('#video').srcObject=s;await $('#video').play();if(token!==epoch)return;
   $('#start').hidden=true;$('#capture').disabled=false;
-  $('#camera-status').textContent=lastSavedSample?'次のカードに合わせてください。同じカードの連続撮影を抑止しています。':'枠に合わせて少し静止すると読み取ります。反応しない場合は下のボタンを押してください。';
+  $('#camera-status').textContent=lastSavedSample?'次のカードに合わせてください。同じカードの連続撮影を抑止しています。':'枠に合わせて約0.6秒静止すると自動で読み取ります。';
   autoCapture(token,gate);
  }catch(e){if(token!==epoch)return;stream?.getTracks().forEach(t=>t.stop());stream=null;$('#camera-status').textContent='カメラを利用できません。カメラの許可を確認するか、画像から・手入力をご利用ください。';$('#start').hidden=false;$('#start').disabled=false;}
 }
-function cameraFrame(){
+function cameraFrame(maxSide=0){
  const v=$('#video');if(!v?.videoWidth||!v.videoHeight)throw Error('カメラの準備中です');
  const rect=v.getBoundingClientRect(),guide=$('.guide').getBoundingClientRect();
  const scale=Math.max(rect.width/v.videoWidth,rect.height/v.videoHeight),ox=(v.videoWidth-rect.width/scale)/2,oy=(v.videoHeight-rect.height/scale)/2;
- return crop(v,ox+(guide.left-rect.left)/scale,oy+(guide.top-rect.top)/scale,guide.width/scale,guide.height/scale);
+ return crop(v,ox+(guide.left-rect.left)/scale,oy+(guide.top-rect.top)/scale,guide.width/scale,guide.height/scale,maxSide?Math.min(1,maxSide/Math.max(guide.width/scale,guide.height/scale)):1);
 }
 function sampleFrame(c){const small=document.createElement('canvas');small.width=64;small.height=64;const ctx=small.getContext('2d',{willReadFrequently:true});ctx.drawImage(c,0,0,64,64);return frameSample(ctx.getImageData(0,0,64,64).data,64,64);}
 function captureCard(c=null,sample=null,key=''){
  if(busy)return;try{const frame=c||cameraFrame();captureSample={...(sample||sampleFrame(frame)),key};capturedAt=new Date().toISOString();readCard(frame);}catch{toast('カメラの準備ができてからお試しください');}
 }
-async function autoCapture(token,gate){
+function autoCapture(token,gate){
  if(token!==epoch||!stream||busy)return;
- try{if($('#auto').checked){const c=cameraFrame(),sample=sampleFrame(c);const result=await decode(c);if(token!==epoch||busy)return;const key=result.length===1?result[0].format+':'+result[0].rawValue:'';if(gate.update(sample,key)){captureCard(c,sample,key);return;}}}catch{/* Try the next frame; manual capture remains available. */}
- if(token===epoch)timer=setTimeout(()=>autoCapture(token,gate),600);
+ try{
+  if($('#auto').checked){
+   // Inspect only a tiny preview. Decode the full-resolution image after capture.
+   const sample=sampleFrame(cameraFrame(96));
+   if(gate.update(sample)){
+    $('#camera-status').textContent='読み取りを開始します…';
+    captureCard(null,sample);return;
+   }
+   $('.guide').classList.toggle('steady',gate.status==='steady');
+   $('#camera-status').textContent=gate.status==='blocked'?'保存済みのカードです。次のカードに替えるか、一度枠から外してください。':gate.status==='steady'?'そのまま静止してください… まもなく読み取ります':gate.status==='settling'?'カードを検知しました。少し静止してください。':'カード全体を枠に合わせてください。静止すると自動で読み取ります。';
+  }else{
+   gate.previous=null;gate.count=0;
+   $('.guide').classList.remove('steady');$('#camera-status').textContent='自動読み取りはOFFです。「今すぐ読み取る」で撮影できます。';
+  }
+ }catch{/* Camera may still be preparing; retry without blocking manual capture. */}
+ if(token===epoch)timer=setTimeout(()=>autoCapture(token,gate),180);
 }
 
 function cropEditor(image){currentImage=image;screen(`<button class="back" id="back">← 読み取り直し</button><h1>カードの範囲を指定</h1><p>カードの左上から右下へドラッグしてください。傾きが大きい場合は撮り直してください。</p><div class="crop-wrap"><canvas id="crop-canvas"></canvas><div class="crop-box" id="crop-box"></div></div><p class="muted">1枚だけを、余白を少なく囲みます。枠は何度でも引き直せます。</p><div class="actions"><button id="rotate">90°回転</button><button id="whole">画像全体</button></div><button id="read" class="primary" style="width:100%">この範囲を読み取る</button>`);const c=$('#crop-canvas');c.width=image.width;c.height=image.height;c.getContext('2d').drawImage(image,0,0);let selection={x:0,y:0,w:1,h:1},start=null;const render=()=>{const b=$('#crop-box');Object.assign(b.style,{left:selection.x*100+'%',top:selection.y*100+'%',width:selection.w*100+'%',height:selection.h*100+'%'});};render();const point=e=>{const r=c.getBoundingClientRect();return{x:Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y:Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))};};c.onpointerdown=e=>{start=point(e);c.setPointerCapture(e.pointerId);};c.onpointermove=e=>{if(!start)return;const p=point(e);selection={x:Math.min(start.x,p.x),y:Math.min(start.y,p.y),w:Math.abs(start.x-p.x),h:Math.abs(start.y-p.y)};render();};c.onpointerup=()=>{start=null;};c.onpointercancel=()=>{start=null;};$('#whole').onclick=()=>{selection={x:0,y:0,w:1,h:1};render();};$('#rotate').onclick=()=>{const n=document.createElement('canvas');n.width=image.height;n.height=image.width;const ctx=n.getContext('2d');ctx.translate(n.width,0);ctx.rotate(Math.PI/2);ctx.drawImage(image,0,0);cropEditor(n);};const cornersButton=document.createElement('button');cornersButton.textContent='傾き補正：四隅を指定';cornersButton.style.marginTop='12px';$('#read').before(cornersButton);cornersButton.onclick=()=>cornerEditor(image);$('#back').onclick=scanner;$('#read').onclick=()=>{if(selection.w*c.width<70||selection.h*c.height<70){toast('カード全体を囲んでください');return;}readCard(crop(c,selection.x*c.width,selection.y*c.height,selection.w*c.width,selection.h*c.height));};}
