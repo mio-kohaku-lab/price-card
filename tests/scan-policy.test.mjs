@@ -6,7 +6,7 @@ test('安定した4フレームで撮影し、動きがある場合は数え直�
 test('保存した同じJANを連続撮影せず、異なるJANは撮影できる',()=>{const s=frameSample(cardPixels(),64,64),g=new CaptureGate({...s,key:'EAN_13:A'});for(let i=0;i<8;i++)assert.equal(g.update(s,'EAN_13:A'),false);for(let i=0;i<3;i++)assert.equal(g.update(s,'EAN_13:B'),false);assert.equal(g.update(s,'EAN_13:B'),true);});
 test('バーコードなしの同じカードを抑止、カードを外せば再開',()=>{const s=frameSample(cardPixels(),64,64),g=new CaptureGate({...s,key:''});for(let i=0;i<8;i++)assert.equal(g.update(s),false);const empty=frameSample(cardPixels(false),64,64);g.update(empty);g.update(empty);for(let i=0;i<3;i++)assert.equal(g.update(s),false);assert.equal(g.update(s),true);});
 
-test('白地の条件に合わなくても模様が5フレーム静止したら撮影する',()=>{const s={pixels:[30,180,45,190],cardLike:false,contentLike:true},g=new CaptureGate();for(let i=0;i<4;i++)assert.equal(g.update(s),false);assert.equal(g.update(s),true);});
+test('白地の条件に合わなくても模様が4フレーム静止したら撮影する',()=>{const s={pixels:[30,180,45,190],cardLike:false,contentLike:true},g=new CaptureGate();for(let i=0;i<3;i++)assert.equal(g.update(s),false);assert.equal(g.update(s),true);});
 test('露出変化は静止として扱い、ゆっくりした累積移動では撮影しない',()=>{
  const s={pixels:[60,160,70,180],cardLike:true},g=new CaptureGate();for(let i=0;i<3;i++)assert.equal(g.update({...s,pixels:s.pixels.map(v=>v+i*8)}),false);assert.equal(g.update({...s,pixels:s.pixels.map(v=>v+24)}),true);
  const moving=new CaptureGate();for(let i=0;i<8;i++)assert.equal(moving.update({...s,pixels:s.pixels.map((v,j)=>v+(j%2?i*7:-i*7))}),false);

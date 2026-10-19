@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {validJan,parseRegions,validateProduct,parseImport,mergeScan,productDate,management,isGray,compareInventory} from '../core.js';
+import {validJan,parseRegions,validateProduct,parseImport,mergeScan,productDate,management,isGray,compareInventory,categoryOf,matchesCategory} from '../core.js';
 test('JANチェックデジット、桁数、先頭ゼロ',()=>{for(const j of ['4977330003109','4971666489040','4903110775003','0000000000000'])assert.equal(validJan(j),true);for(const j of ['4977330003108','497733000310','abc'])assert.equal(validJan(j),false);});
 test('読み取りは商品名・JANのみ。旧項目は抽出しない',()=>{const p=parseRegions({name:'かわいや 黒焼\nポテト 1本',exclusive:'¥584',inclusive:'¥631)',dept:'13',bottom:'-011 4977330003109 -001'});for(const k of ['allowance','priceExclusive','priceInclusive','dept'])assert.equal(p[k],'');assert.equal(p.jan,'4977330003109');assert.equal(p.name,'かわいや 黒焼 ポテト 1本');});
 test('左の数値で補完しない、未知のバーコード全文からJANを推測しない',()=>{const p=parseRegions({bottom:'-120 4971666489040'},[{format:'CODE_128',rawValue:'0114977330003109001'}]);assert.equal(p.allowance,'');assert.equal(p.jan,'4971666489040');assert.equal(p.priceInclusive,'');});
@@ -40,4 +40,13 @@ test('管理状態を再スキャンでも維持し、JSONに空欄と0を区別
   const restored=parseImport(JSON.stringify({schemaVersion:1,products:[{...p,materialCount}]}))[0];assert.equal(restored.enabled,false);assert.equal(restored.materialCount,materialCount);
  }
  assert.throws(()=>parseImport(JSON.stringify({schemaVersion:1,products:[{...p,enabled:'false'}]})));
+});
+
+test('カテゴリは未選択が初期値、指定4種を保存・復元し再撮影でも維持',()=>{
+ const base=parseRegions({name:'商品'});assert.equal(categoryOf(base),'');
+ for(const category of ['','日配','飲料','ドライ','その他']){
+  const p={...base,category};const restored=parseImport(JSON.stringify({schemaVersion:1,products:[p]}))[0];assert.equal(restored.category,category);assert.equal(mergeScan(p,base).category,category);
+  assert.equal(matchesCategory(p,'全て'),true);assert.equal(matchesCategory(p,'日配'),category==='日配');
+ }
+ assert.throws(()=>validateProduct({...base,category:'未知'}));assert.equal(mergeScan({...base,category:'日配'},{...base,category:''}).category,'');
 });

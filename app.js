@@ -1,32 +1,33 @@
 import {attachLongPress} from './gestures.js';
 import {frameSample,CaptureGate} from './scan-policy.js';
-import {fields,emptyProduct,validJan,validateProduct,parseImport,mergeScan,productDate,management,isGray,compareRegistered,compareInventory} from './core.js';
+import {fields,emptyProduct,validJan,validateProduct,parseImport,mergeScan,productDate,management,isGray,compareRegistered,compareInventory,categories,categoryOf,matchesCategory} from './core.js';
 import * as db from './db.js';
 import {crop,decode,recognize,straighten,releaseOCR} from './recognition.js';
-const app=document.querySelector('#app');let products=[],stream,timer,epoch=0,busy=false,currentImage=null,draft=null,wake=null,sessionCount=0,lastSavedSample=null,captureSample=null,capturedAt='';
+const app=document.querySelector('#app');let products=[],stream,timer,epoch=0,busy=false,currentImage=null,draft=null,wake=null,sessionCount=0,lastSavedSample=null,captureSample=null,capturedAt='',categoryFilter='全て';
 const $=s=>document.querySelector(s);const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(s){$('#toast').textContent=s;$('#toast').style.display='block';setTimeout(()=>$('#toast').style.display='none',4500);}
 function ask(title,message,ok='実行'){return new Promise(resolve=>{const d=$('#modal');$('#modal-title').textContent=title;$('#modal-message').textContent=message;$('#modal-ok').textContent=ok;const done=v=>{d.close();resolve(v);};$('#modal-ok').onclick=()=>done(true);$('#modal-cancel').onclick=()=>done(false);d.oncancel=e=>{e.preventDefault();done(false);};d.showModal();});}
 function stop(){epoch++;clearTimeout(timer);stream?.getTracks().forEach(t=>t.stop());stream=null;wake?.release().catch(()=>{});wake=null;}
 function screen(html){stop();app.className='';app.innerHTML=html;window.scrollTo(0,0);}
-async function home(){if(busy)return;currentImage=null;draft=null;screen('<p>商品を読み込み中…</p>');try{products=await db.all();}catch(e){app.innerHTML='<h1>保存領域を開けません</h1><p>通常のChromeで開き直してください。プライベートモードや端末の空き容量も確認してください。</p>';return;}app.className='list-page';app.innerHTML=`<div class="list-toolbar"><h1>商品一覧</h1><button id="scan" class="primary">＋ 読み取る</button></div><div class="search"><input id="search" type="search" placeholder="商品名・JANで検索" aria-label="商品名・JANで検索"></div><div class="inventory-heading"><h2>保存した商品 <span class="count" id="inventory-count">${products.length}件</span></h2><button id="sort-products">並べ替え</button></div><div id="list"></div><button id="manual">＋ 手入力で登録</button><footer><h2>データのバックアップ</h2><p class="muted">この端末のブラウザに保存されます。定期的にJSONを書き出してください。</p><div class="actions"><button id="export">書き出す</button><button id="import">読み込む</button></div><input class="file-input" id="backup" type="file" accept="application/json,.json"><p class="muted">端末内処理 · アカウント不要<br>店舗の公式アプリではありません。</p></footer>`;
+async function home(){if(busy)return;currentImage=null;draft=null;screen('<p>商品を読み込み中…</p>');try{products=await db.all();}catch(e){app.innerHTML='<h1>保存領域を開けません</h1><p>通常のChromeで開き直してください。プライベートモードや端末の空き容量も確認してください。</p>';return;}app.className='list-page';app.innerHTML=`<div class="list-toolbar"><h1>商品一覧</h1><button id="scan" class="primary">＋ 読み取る</button></div><div class="category-filters" role="group" aria-label="カテゴリで絞り込み">${['全て','日配','飲料','ドライ'].map(c=>`<button data-filter="${c}" aria-pressed="${categoryFilter===c}">${c}</button>`).join('')}</div><div class="inventory-heading"><h2>保存した商品 <span class="count" id="inventory-count">${products.length}件</span></h2><button id="sort-products">並べ替え</button></div><div id="list"></div><button id="manual">＋ 手入力で登録</button><footer><h2>データのバックアップ</h2><p class="muted">この端末のブラウザに保存されます。定期的にJSONを書き出してください。</p><div class="actions"><button id="export">書き出す</button><button id="import">読み込む</button></div><input class="file-input" id="backup" type="file" accept="application/json,.json"><p class="muted">端末内処理 · アカウント不要<br>店舗の公式アプリではありません。</p></footer>`;
 let order=products.slice().sort(compareRegistered).map(p=>p.id);
 const list=()=>{
- const q=$('#search').value.normalize('NFKC').toLowerCase(),rank=new Map(order.map((id,i)=>[id,i]));
- const rows=products.filter(p=>(p.name+' '+p.jan).normalize('NFKC').toLowerCase().includes(q)).sort((a,b)=>(rank.get(a.id)??Infinity)-(rank.get(b.id)??Infinity));
+ const q=categoryFilter!=='全て',rank=new Map(order.map((id,i)=>[id,i]));
+ const rows=products.filter(p=>matchesCategory(p,categoryFilter)).sort((a,b)=>(rank.get(a.id)??Infinity)-(rank.get(b.id)??Infinity));
+ $('#inventory-count').textContent=`${rows.length}件`;
  $('#list').innerHTML=rows.length?`<table class="product-table"><caption class="sr-only">保存した商品。商品名を押すと詳細を表示します。</caption><tbody>${rows.map(p=>{
   const m=management(p);return `<tr data-product="${esc(p.id)}" class="${isGray(p)?'is-gray':''}"><td>
   <div class="product-name-scroll"><button class="product-link" data-id="${esc(p.id)}">${esc(p.name)}</button></div>
   <div class="product-meta"><span class="product-jan">${esc(p.jan||'JAN未登録')}</span><small>${esc(productDate({createdAt:p.createdAt}))}</small><label>基材：<input class="material-count" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8" value="${esc(m.materialCount)}" aria-label="${esc(p.name)}の基材数" autocomplete="off" enterkeyhint="done"></label><button class="state-toggle" aria-label="${esc(p.name)}の〇✕切り替え" aria-pressed="${!m.enabled}">${m.enabled?'〇':'✕'}</button></div><span class="management-status" role="status"></span>
   </td></tr>`;
- }).join('')}</tbody></table>`:`<div class="empty panel"><h2>${q?'一致する商品がありません':'まだ商品がありません'}</h2><p class="muted">${q?'検索する文字を変えてください。':'最初のプライスカードを登録しましょう。'}</p></div>`;
+ }).join('')}</tbody></table>`:`<div class="empty panel"><h2>${q?'一致する商品がありません':'まだ商品がありません'}</h2><p class="muted">${q?'カテゴリを変更するか、編集画面でカテゴリを選んでください。':'最初のプライスカードを登録しましょう。'}</p></div>`;
  document.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>detail(products.find(p=>p.id===b.dataset.id)));
  document.querySelectorAll('[data-product]').forEach(row=>{
   const id=row.dataset.product,input=row.querySelector('.material-count'),toggle=row.querySelector('.state-toggle'),status=row.querySelector('.management-status');
   attachLongPress(row,async()=>{
    const p=products.find(p=>p.id===id);if(!p)return;
    if(!await ask('商品を削除しますか？',`「${p.name}」を端末から削除します。`,'削除する'))return;
-   try{await managementQueue;await db.write([],id);products=products.filter(p=>p.id!==id);order=order.filter(key=>key!==id);list();$('#inventory-count').textContent=`${products.length}件`;toast('削除しました');}
+   try{await managementQueue;await db.write([],id);products=products.filter(p=>p.id!==id);order=order.filter(key=>key!==id);list();toast('削除しました');}
    catch{toast('削除できませんでした。もう一度お試しください。');}
   });
   const paint=p=>{const m=management(p);input.value=m.materialCount;toggle.textContent=m.enabled?'〇':'✕';toggle.setAttribute('aria-pressed',String(!m.enabled));row.classList.toggle('is-gray',isGray(p));};
@@ -44,7 +45,8 @@ const list=()=>{
  });
 };
 $('#sort-products').onclick=async()=>{await managementQueue;order=products.slice().sort(compareInventory).map(p=>p.id);list();toast('白背景 → グレー背景、それぞれ登録日の新しい順に並べました');};
-list();$('#search').oninput=list;$('#scan').onclick=scanner;$('#manual').onclick=()=>editor({...emptyProduct(),barcodes:[]});$('#export').onclick=exportData;$('#import').onclick=()=>$('#backup').click();$('#backup').onchange=importData;
+document.querySelectorAll('[data-filter]').forEach(button=>button.onclick=()=>{categoryFilter=button.dataset.filter;document.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.filter===categoryFilter)));list();});
+list();$('#scan').onclick=scanner;$('#manual').onclick=()=>editor({...emptyProduct(),barcodes:[]});$('#export').onclick=exportData;$('#import').onclick=()=>$('#backup').click();$('#backup').onchange=importData;
 }
 let managementQueue=Promise.resolve();
 function saveManagement(id,patch){
@@ -58,7 +60,7 @@ function saveManagement(id,patch){
 function scanner(){
  if(busy)return;currentImage=null;captureSample=null;capturedAt='';
  const gate=new CaptureGate(lastSavedSample);
- screen(`<div class="scan-top"><button class="back" id="back">☰ 商品一覧</button><span class="count">今回 ${sessionCount}件 保存</span></div><h1>カードに合わせて、保存。</h1><div class="camera"><video id="video" playsinline muted autoplay></video><div class="guide"><div class="name-zone"><b>商品名はこの範囲に</b></div><span>少し離して、小さい枠にカード全体を</span></div></div><p id="camera-status" role="status">カメラを起動しています…</p><label class="check"><input id="auto" type="checkbox" checked>静止したカードを自動で読み取る</label><div class="actions"><button id="start" hidden>カメラを再開</button><button id="capture" class="primary" disabled>今すぐ読み取る</button></div><div class="actions secondary"><button id="upload">画像から</button><button id="manual">手入力</button></div><input class="file-input" id="image-file" type="file" accept="image/*">`);
+ screen(`<div class="scan-top"><button class="back" id="back">☰ 商品一覧</button><span class="count">今回 ${sessionCount}件 保存</span></div><h1>カードに合わせて、保存。</h1><div class="camera"><video id="video" playsinline muted autoplay></video><div class="guide"><div class="name-zone"><b>商品名はこの範囲に</b></div><span>少し離して、小さい枠にカード全体を</span></div></div><p id="camera-status" role="status">カメラを起動しています…</p><label class="check"><input id="auto" type="checkbox" checked>静止したカードを自動で読み取る（4カウント）</label><div class="actions"><button id="start" hidden>カメラを再開</button><button id="capture" class="primary" disabled>今すぐ読み取る</button></div><div class="actions secondary"><button id="upload">画像から</button><button id="manual">手入力</button></div><input class="file-input" id="image-file" type="file" accept="image/*">`);
  app.className='scan-page';$('#back').onclick=home;$('#start').onclick=()=>startCamera(gate);
  $('#capture').onclick=()=>captureCard();$('#upload').onclick=()=>$('#image-file').click();$('#manual').onclick=()=>editor({...emptyProduct(),barcodes:[]});
  $('#image-file').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>30*1024*1024)throw Error('画像は30MB以下で選択してください');const image=await createImageBitmap(f);const scale=Math.min(1,2200/Math.max(image.width,image.height));const c=crop(image,0,0,image.width,image.height,scale);image.close();cropEditor(c);}catch(err){toast('画像を開けませんでした。'+err.message);}};
@@ -97,7 +99,7 @@ function autoCapture(token,gate){
     captureCard(null,sample);return;
    }
    $('.guide').classList.toggle('steady',gate.status==='steady');
-   $('#camera-status').textContent=gate.status==='blocked'?'保存済みのカードです。次のカードに替えるか、一度枠から外してください。':gate.status==='steady'?`静止を確認中… ${Math.min(gate.count,sample.cardLike?4:5)}/${sample.cardLike?4:5}`:gate.status==='settling'?'カードを検知しました。少し静止してください。':'文字の模様を検知できていません。明るい場所で、カード全体を小さい枠に合わせてください。';
+   $('#camera-status').textContent=gate.status==='blocked'?'保存済みのカードです。次のカードに替えるか、一度枠から外してください。':gate.status==='steady'?`静止を確認中… ${Math.min(gate.count,4)}/${4}`:gate.status==='settling'?'カードを検知しました。少し静止してください。':'文字の模様を検知できていません。明るい場所で、カード全体を小さい枠に合わせてください。';
   }else{
    gate.previous=null;gate.count=0;
    $('.guide').classList.remove('steady');$('#camera-status').textContent='自動読み取りはOFFです。「今すぐ読み取る」で撮影できます。';
@@ -110,20 +112,21 @@ function cropEditor(image){currentImage=image;screen(`<button class="back" id="b
 function cornerEditor(image){screen('<button class="back" id="back">← 範囲指定に戻る</button><h1>カードの四隅をタップ</h1><p id="corner-status">1. 左上をタップしてください</p><div class="crop-wrap"><canvas id="corners"></canvas></div><div class="actions"><button id="reset">やり直す</button><button id="correct" class="primary" disabled>補正して読み取る</button></div>');const c=$('#corners');c.width=image.width;c.height=image.height;const ctx=c.getContext('2d');let points=[];const draw=()=>{ctx.drawImage(image,0,0);ctx.fillStyle='#edff65';ctx.strokeStyle='#12605b';ctx.lineWidth=3;for(const p of points){ctx.beginPath();ctx.arc(p.x,p.y,Math.max(5,c.width*.009),0,Math.PI*2);ctx.fill();ctx.stroke();}};draw();c.onpointerdown=e=>{if(points.length===4)return;const r=c.getBoundingClientRect();points.push({x:(e.clientX-r.left)*c.width/r.width,y:(e.clientY-r.top)*c.height/r.height});draw();$('#corner-status').textContent=['','2. 右上をタップしてください','3. 右下をタップしてください','4. 左下をタップしてください','四隅を指定しました'][points.length];$('#correct').disabled=points.length!==4;};$('#reset').onclick=()=>cornerEditor(image);$('#back').onclick=()=>cropEditor(image);$('#correct').onclick=()=>{const area=Math.abs(points.reduce((sum,p,i)=>{const q=points[(i+1)%4];return sum+p.x*q.y-q.x*p.y;},0))/2;const cross=points.map((p,i)=>{const q=points[(i+1)%4],r=points[(i+2)%4];return(q.x-p.x)*(r.y-q.y)-(q.y-p.y)*(r.x-q.x);});if(area<4900||cross.some(n=>n<=0)){toast('左上・右上・右下・左下の順に、カード全体を指定してください');return;}readCard(straighten(image,points));};}
 async function readCard(c){const readAt=new Date().toISOString();screen('<h1>カードを読み取り中</h1><div class="panel progress"><div class="spinner"></div><p id="progress" role="status">バーコードを確認しています…</p><p class="muted">画像は外部へ送信されません。</p></div>');busy=true;currentImage=c;try{const result=await recognize(c,s=>$('#progress').textContent=s);busy=false;editor({...result.product,capturedAt,readAt,barcodes:result.barcodes,barcodeJan:result.product.jan,ocr:result.regions,ocrConfidence:result.confidence},result.warning);}catch(e){busy=false;editor({...emptyProduct(),capturedAt,readAt,barcodes:[]},'読み取れませんでした。手入力してください。');}}
 function editor(p,warning=''){
- draft={...p};const editing=Boolean(p.id);
- screen(`<button class="back" id="cancel">${editing?'← 商品詳細':'← 次のスキャン'}</button><h1>${editing?'商品情報を編集':'読み取り結果'}</h1><p class="muted">必要な箇所だけ直して、保存。</p>${warning?`<div class="notice">${esc(warning)}</div>`:''}<form id="form"><div class="panel"><label>商品名<input name="name" value="${esc(p.name)}" required maxlength="300" autocomplete="off" enterkeyhint="next"></label><label>JAN<input name="jan" value="${esc(p.jan)}" inputmode="numeric" autocomplete="off" enterkeyhint="done"></label><p id="jan-status" class="muted" aria-live="polite"></p><p id="form-error" class="error-text" role="alert"></p></div><div class="entry-actions"><button class="primary" id="save-product" type="submit">${editing?'変更を保存':'保存して次へ'}</button><button type="button" id="retry">読み取り直し</button></div></form>${currentImage?'<details><summary>撮影したカードを見る・範囲を調整</summary><img id="review-image" class="preview" alt="読み取り対象のカード"><button id="adjust">範囲を調整して読み取り直す</button></details>':''}${sourceInfo(p)}`);
+ draft={...p,category:p.category??categoryOf(products.find(x=>x.jan&&x.jan===p.jan)||{})};const editing=Boolean(p.id);let categoryTouched=false;
+ screen(`<button class="back" id="cancel">${editing?'← 商品詳細':'← 次のスキャン'}</button><h1>${editing?'商品情報を編集':'読み取り結果'}</h1><p class="muted">必要な箇所だけ直して、保存。</p>${warning?`<div class="notice">${esc(warning)}</div>`:''}<form id="form"><div class="panel"><label>商品名<input name="name" value="${esc(p.name)}" required maxlength="300" autocomplete="off" enterkeyhint="next"></label><label>JAN<input name="jan" value="${esc(p.jan)}" inputmode="numeric" autocomplete="off" enterkeyhint="done"></label><fieldset class="category-editor"><legend>カテゴリ</legend><div class="category-tabs">${categories.map(c=>`<label><input type="radio" name="category" value="${c}" ${draft.category===c?'checked':''}><span>${c||'未選択'}</span></label>`).join('')}</div></fieldset><p id="jan-status" class="muted" aria-live="polite"></p><p id="form-error" class="error-text" role="alert"></p></div><div class="entry-actions"><button class="primary" id="save-product" type="submit">${editing?'変更を保存':'保存して次へ'}</button><button type="button" id="retry">読み取り直し</button></div></form>${currentImage?'<details><summary>撮影したカードを見る・範囲を調整</summary><img id="review-image" class="preview" alt="読み取り対象のカード"><button id="adjust">範囲を調整して読み取り直す</button></details>':''}${sourceInfo(p)}`);
  app.className='entry-page';if(currentImage){$('#review-image').src=currentImage.toDataURL('image/jpeg',.85);$('#adjust').onclick=()=>cropEditor(currentImage);}
  const janInput=$('[name=jan]');
  const check=()=>{const j=janInput.value.trim(),existing=products.find(x=>x.jan===j&&x.id!==p.id);$('#jan-status').textContent=existing?`登録済み：${existing.name}。「保存して更新」でこの商品を更新します。`:j?(validJan(j)?'✓ JANのチェックデジットは正しいです':'JANの桁数・チェックデジットを確認してください。'):'JANは未登録です。バーコードを使うには入力してください。';$('#save-product').textContent=editing?'変更を保存':existing?'保存して更新・次へ':'保存して次へ';};
+ document.querySelectorAll('[name=category]').forEach(input=>input.onchange=()=>{categoryTouched=true;});
  janInput.oninput=check;check();$('#cancel').onclick=editing?()=>detail(p):scanner;$('#retry').onclick=scanner;
  let saving=false;
  $('#form').onsubmit=async e=>{
   e.preventDefault();if(saving)return;saving=true;const button=$('#save-product');button.disabled=true;
   try{
-   const data=Object.fromEntries(new FormData(e.target));let item={...emptyProduct(),...draft,...Object.fromEntries(['name','jan'].map(k=>[k,data[k].trim()]))};validateProduct(item);
+   const data=Object.fromEntries(new FormData(e.target));let item={...emptyProduct(),...draft,category:data.category??draft.category,...Object.fromEntries(['name','jan'].map(k=>[k,data[k].trim()]))};validateProduct(item);
    // Re-read immediately before saving so another tab's data is not merged from a stale list.
    const latest=await db.all();const existing=latest.find(x=>x.jan&&x.jan===item.jan&&x.id!==item.id);
-   if(existing){if(item.id)throw Error('別の商品とJANが重複しています。JANを修正してください。');item=mergeScan(existing,item);}
+   if(existing){if(item.id)throw Error('別の商品とJANが重複しています。JANを修正してください。');if(!categoryTouched)item.category=categoryOf(existing);item=mergeScan(existing,item);}
    const now=new Date().toISOString();item.id||=crypto.randomUUID();item.createdAt||=now;item.updatedAt=now;await db.write([item]);
    products=latest.filter(x=>x.id!==item.id).concat(item);currentImage=null;
    if(editing){toast('変更を保存しました');detail(item);}else{sessionCount++;lastSavedSample=captureSample;toast(existing?'更新しました。次のカードへ':'保存しました。次のカードへ');scanner();}
