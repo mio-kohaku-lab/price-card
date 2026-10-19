@@ -22,7 +22,7 @@ export class CaptureGate{
   if(this.blocked&&((key&&this.blocked.key)?key===this.blocked.key:frameDifference(sample.pixels,this.blocked.pixels)<12)){this.status='blocked';this.count=0;this.previous=null;this.anchor=null;return false;}
   if(this.blocked&&frameDifference(sample.pixels,this.blocked.pixels)>=12)this.blocked=null;
   const stable=this.previous&&motionDifference(sample.pixels,this.previous.pixels)<8&&motionDifference(sample.pixels,this.anchor)<12&&key===this.previous.key;
-  if(!stable)this.anchor=sample.pixels;this.count=stable?this.count+1:1;this.status=this.count>1?'steady':'settling';this.previous={...sample,key};return this.count>=4;
+  if(!stable)this.anchor=sample.pixels;this.count=stable?this.count+1:1;this.status=this.count>1?'steady':'settling';this.previous={...sample,key};return this.count>=2;
  }
 }
 

@@ -65,7 +65,7 @@ function saveManagement(id,patch){
 function scanner(){
  if(busy)return;currentImage=null;captureSample=null;capturedAt='';
  const gate=new CaptureGate(lastSavedSample);
- screen(`<div class="scan-top"><button class="back" id="back">☰ 商品一覧</button><span class="count">今回 ${sessionCount}件 保存</span></div><h1>カードに合わせて、保存。</h1><div class="camera"><video id="video" playsinline muted autoplay></video><div class="guide"><div class="name-zone"><b>商品名はこの範囲に</b></div><span>少し離して、小さい枠にカード全体を</span></div></div><p id="camera-status" role="status">カメラを起動しています…</p><label class="check"><input id="auto" type="checkbox" checked>静止したカードを自動で読み取る（4カウント）</label><div class="actions"><button id="start" hidden>カメラを再開</button><button id="capture" class="primary" disabled>今すぐ読み取る</button></div><div class="actions secondary"><button id="upload">画像から</button><button id="manual">手入力</button></div><input class="file-input" id="image-file" type="file" accept="image/*">`);
+ screen(`<div class="scan-top"><button class="back" id="back">☰ 商品一覧</button><span class="count">今回 ${sessionCount}件 保存</span></div><h1>カードに合わせて、保存。</h1><div class="camera"><video id="video" playsinline muted autoplay></video><div class="guide"><div class="name-zone"><b>商品名はこの範囲に</b></div><span>少し離して、小さい枠にカード全体を</span></div></div><p id="camera-status" role="status">カメラを起動しています…</p><label class="check"><input id="auto" type="checkbox" checked>静止したカードを自動で読み取る（2カウント）</label><div class="actions"><button id="start" hidden>カメラを再開</button><button id="capture" class="primary" disabled>今すぐ読み取る</button></div><div class="actions secondary"><button id="upload">画像から</button><button id="manual">手入力</button></div><input class="file-input" id="image-file" type="file" accept="image/*">`);
  app.className='scan-page';$('#back').onclick=home;$('#start').onclick=()=>startCamera(gate);
  $('#capture').onclick=()=>captureCard();$('#upload').onclick=()=>$('#image-file').click();$('#manual').onclick=()=>editor({...emptyProduct(),barcodes:[]});
  $('#image-file').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>30*1024*1024)throw Error('画像は30MB以下で選択してください');const image=await createImageBitmap(f);const scale=Math.min(1,2200/Math.max(image.width,image.height));const c=crop(image,0,0,image.width,image.height,scale);image.close();cropEditor(c);}catch(err){toast('画像を開けませんでした。'+err.message);}};
@@ -79,7 +79,7 @@ async function startCamera(gate=new CaptureGate(lastSavedSample)){
   if(token!==epoch){s.getTracks().forEach(t=>t.stop());return;}
   stream=s;$('#video').srcObject=s;await $('#video').play();if(token!==epoch)return;
   $('#start').hidden=true;$('#capture').disabled=false;
-  $('#camera-status').textContent=lastSavedSample?'次のカードに合わせてください。同じカードの連続撮影を抑止しています。':'枠に合わせて約0.6秒静止すると自動で読み取ります。';
+  $('#camera-status').textContent=lastSavedSample?'次のカードに合わせてください。同じカードの連続撮影を抑止しています。':'枠に合わせて短く静止すると自動で読み取ります。';
   autoCapture(token,gate);
  }catch(e){if(token!==epoch)return;stream?.getTracks().forEach(t=>t.stop());stream=null;$('#camera-status').textContent='カメラを利用できません。カメラの許可を確認するか、画像から・手入力をご利用ください。';$('#start').hidden=false;$('#start').disabled=false;}
 }
@@ -104,7 +104,7 @@ function autoCapture(token,gate){
     captureCard(null,sample);return;
    }
    $('.guide').classList.toggle('steady',gate.status==='steady');
-   $('#camera-status').textContent=gate.status==='blocked'?'保存済みのカードです。次のカードに替えるか、一度枠から外してください。':gate.status==='steady'?`静止を確認中… ${Math.min(gate.count,4)}/${4}`:gate.status==='settling'?'カードを検知しました。少し静止してください。':'文字の模様を検知できていません。明るい場所で、カード全体を小さい枠に合わせてください。';
+   $('#camera-status').textContent=gate.status==='blocked'?'保存済みのカードです。次のカードに替えるか、一度枠から外してください。':gate.status==='steady'?`静止を確認中… ${Math.min(gate.count,2)}/2`:gate.status==='settling'?'カードを検知しました（1/2）。そのまま合わせてください。':'文字の模様を検知できていません。明るい場所で、カード全体を小さい枠に合わせてください。';
   }else{
    gate.previous=null;gate.count=0;
    $('.guide').classList.remove('steady');$('#camera-status').textContent='自動読み取りはOFFです。「今すぐ読み取る」で撮影できます。';
