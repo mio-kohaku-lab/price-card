@@ -1,4 +1,4 @@
-# カードノート Ver.0.2.0
+# カードノート Ver.0.2.1
 
 Android Chrome向けのプライスカード商品管理PWAです。カメラ・画像から読み取り、確認修正後に端末内へ保存し、JANバーコードを大きく表示できます。
 
@@ -50,3 +50,9 @@ node scripts/serve.mjs
 GitHub Settings → Pages → Source をGitHub Actionsに設定します。mainへのpushでテストと公開を実行します。PWA更新時はsw.jsのCACHE名を更新してください。
 
 ライセンス情報: [THIRD-PARTY.md](THIRD-PARTY.md)。依存ファイルのライセンス文書はsetup時にvendorへ取得します。
+
+## インストールと更新の案内
+
+画面上部の「インストール・更新」に、Chromeからbeforeinstallpromptを受け取った場合だけインストールボタンを表示します。イベントがないことをインストール済みとは判定せず、過去のインストールをlocalStorageにも記録しません。standaloneは現在の起動方法の確認にのみ使います。Chrome自身の誤ったインストール済み判定はアプリから変更できません。
+
+古い画面のままの場合は `refresh.html` を開いて最新版を準備します。Service Workerのバージョン応答を確認してからアプリへのリンクを表示します。IndexedDB・商品データ・他のサイトの登録には触れません。入力中の自動再読み込みはしません。更新してもAndroidのインストール問題が解決するとは限りません。実機でボタンの表示、キャンセル、ホーム画面起動を確認してください。
