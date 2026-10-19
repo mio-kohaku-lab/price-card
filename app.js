@@ -9,7 +9,7 @@ function toast(s){$('#toast').textContent=s;$('#toast').style.display='block';se
 function ask(title,message,ok='実行'){return new Promise(resolve=>{const d=$('#modal');$('#modal-title').textContent=title;$('#modal-message').textContent=message;$('#modal-ok').textContent=ok;const done=v=>{d.close();resolve(v);};$('#modal-ok').onclick=()=>done(true);$('#modal-cancel').onclick=()=>done(false);d.oncancel=e=>{e.preventDefault();done(false);};d.showModal();});}
 function stop(){epoch++;clearTimeout(timer);stream?.getTracks().forEach(t=>t.stop());stream=null;wake?.release().catch(()=>{});wake=null;}
 function screen(html){stop();app.className='';app.innerHTML=html;window.scrollTo(0,0);}
-async function home(){if(busy)return;currentImage=null;draft=null;screen('<p>商品を読み込み中…</p>');try{products=await db.all();}catch(e){app.innerHTML='<h1>保存領域を開けません</h1><p>通常のChromeで開き直してください。プライベートモードや端末の空き容量も確認してください。</p>';return;}app.className='list-page';app.innerHTML=`<div class="list-toolbar"><h1>商品一覧</h1><button id="scan" class="primary">＋ 読み取る</button></div><div class="category-filters" role="group" aria-label="カテゴリで絞り込み">${['全て','日配','飲料','ドライ'].map(c=>`<button data-filter="${c}" aria-pressed="${categoryFilter===c}">${c}</button>`).join('')}</div><div class="inventory-heading"><h2>保存した商品 <span class="count" id="inventory-count">${products.length}件</span></h2><button id="sort-products">並べ替え</button></div><div id="list"></div><button id="manual">＋ 手入力で登録</button><footer><h2>データのバックアップ</h2><p class="muted">この端末のブラウザに保存されます。定期的にJSONを書き出してください。</p><div class="actions"><button id="export">書き出す</button><button id="import">読み込む</button></div><input class="file-input" id="backup" type="file" accept="application/json,.json"><p class="muted">端末内処理 · アカウント不要<br>店舗の公式アプリではありません。</p></footer>`;
+async function home(){if(busy)return;currentImage=null;draft=null;screen('<p>商品を読み込み中…</p>');try{await managementQueue;products=await db.all();}catch(e){app.innerHTML='<h1>保存領域を開けません</h1><p>通常のChromeで開き直してください。プライベートモードや端末の空き容量も確認してください。</p>';return;}app.className='list-page';app.innerHTML=`<div class="list-toolbar"><h1>商品一覧</h1><button id="scan" class="primary">＋ 読み取る</button></div><div class="category-filters" role="group" aria-label="カテゴリで絞り込み">${['全て','日配','飲料','ドライ'].map(c=>`<button data-filter="${c}" aria-pressed="${categoryFilter===c}">${c}</button>`).join('')}</div><div class="inventory-heading"><h2>保存した商品 <span class="count" id="inventory-count">${products.length}件</span></h2><button id="sort-products">並べ替え</button></div><div id="list"></div><button id="manual">＋ 手入力で登録</button><footer><h2>データのバックアップ</h2><p class="muted">この端末のブラウザに保存されます。定期的にJSONを書き出してください。</p><div class="actions"><button id="export">書き出す</button><button id="import">読み込む</button></div><input class="file-input" id="backup" type="file" accept="application/json,.json"><p class="muted">端末内処理 · アカウント不要<br>店舗の公式アプリではありません。</p></footer>`;
 let order=products.slice().sort(compareRegistered).map(p=>p.id);
 const list=()=>{
  const q=categoryFilter!=='全て',rank=new Map(order.map((id,i)=>[id,i]));
@@ -23,30 +23,35 @@ const list=()=>{
  }).join('')}</tbody></table>`:`<div class="empty panel"><h2>${q?'一致する商品がありません':'まだ商品がありません'}</h2><p class="muted">${q?'カテゴリを変更するか、編集画面でカテゴリを選んでください。':'最初のプライスカードを登録しましょう。'}</p></div>`;
  document.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>detail(products.find(p=>p.id===b.dataset.id)));
  document.querySelectorAll('[data-product]').forEach(row=>{
-  const id=row.dataset.product,input=row.querySelector('.material-count'),toggle=row.querySelector('.state-toggle'),status=row.querySelector('.management-status');
+  const id=row.dataset.product;
   attachLongPress(row,async()=>{
    const p=products.find(p=>p.id===id);if(!p)return;
    if(!await ask('商品を削除しますか？',`「${p.name}」を端末から削除します。`,'削除する'))return;
    try{await managementQueue;await db.write([],id);products=products.filter(p=>p.id!==id);order=order.filter(key=>key!==id);list();toast('削除しました');}
    catch{toast('削除できませんでした。もう一度お試しください。');}
   });
+  bindManagement(row,id);
+ });
+};
+$('#sort-products').onclick=async()=>{await managementQueue;order=products.slice().sort(compareInventory).map(p=>p.id);list();toast('白背景 → グレー背景、それぞれ登録日の新しい順に並べました');};
+document.querySelectorAll('[data-filter]').forEach(button=>button.onclick=()=>{categoryFilter=button.dataset.filter;document.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.filter===categoryFilter)));list();});
+list();$('#scan').onclick=scanner;$('#manual').onclick=()=>editor({...emptyProduct(),barcodes:[]});$('#export').onclick=exportData;$('#import').onclick=()=>$('#backup').click();$('#backup').onchange=importData;
+}
+function bindManagement(row,id,onSaved=()=>{}){
+ const input=row.querySelector('.material-count'),toggle=row.querySelector('.state-toggle'),status=row.querySelector('.management-status');
   const paint=p=>{const m=management(p);input.value=m.materialCount;toggle.textContent=m.enabled?'〇':'✕';toggle.setAttribute('aria-pressed',String(!m.enabled));row.classList.toggle('is-gray',isGray(p));};
   const save=async patch=>{
    const previous=products.find(p=>p.id===id);
    try{management({...previous,...patch});}catch(e){input.value=management(previous).materialCount;status.textContent=e.message;return;}
    paint({...previous,...patch});input.disabled=toggle.disabled=true;status.textContent='保存中…';
-   try{const saved=await saveManagement(id,patch);paint(saved);status.textContent='';}
+   try{const saved=await saveManagement(id,patch);paint(saved);onSaved(saved);status.textContent='';}
    catch(e){paint(products.find(p=>p.id===id)||previous);status.textContent='保存できませんでした。再度お試しください。';}
    finally{input.disabled=toggle.disabled=false;}
   };
   input.onchange=()=>save({materialCount:input.value.trim()});
   input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();input.blur();}};
   toggle.onclick=()=>save({enabled:!management(products.find(p=>p.id===id)).enabled});
- });
-};
-$('#sort-products').onclick=async()=>{await managementQueue;order=products.slice().sort(compareInventory).map(p=>p.id);list();toast('白背景 → グレー背景、それぞれ登録日の新しい順に並べました');};
-document.querySelectorAll('[data-filter]').forEach(button=>button.onclick=()=>{categoryFilter=button.dataset.filter;document.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.filter===categoryFilter)));list();});
-list();$('#scan').onclick=scanner;$('#manual').onclick=()=>editor({...emptyProduct(),barcodes:[]});$('#export').onclick=exportData;$('#import').onclick=()=>$('#backup').click();$('#backup').onchange=importData;
+ paint(products.find(p=>p.id===id));
 }
 let managementQueue=Promise.resolve();
 function saveManagement(id,patch){
@@ -136,7 +141,20 @@ function editor(p,warning=''){
 
 function sourceInfo(p){return `<details><summary>読み取り元のデータ</summary><p>検出形式・デコード全文（未検出時は空欄）</p><pre>${esc(JSON.stringify(p.barcodes||[],null,2))}</pre>${p.ocr?`<p>OCR原文</p><pre>${esc(JSON.stringify(p.ocr,null,2))}</pre>`:''}</details>`;}
 function barcode(p,target){const el=document.querySelector(target);el.innerHTML='';const originals=(p.barcodes||[]).filter(b=>p.barcodeJan===p.jan&&b.format==='CODE_128'&&/^[\x20-\x7e]+$/.test(b.rawValue));let value,format,label;if(originals.length===1){value=originals[0].rawValue;format='CODE128';label='検出したCODE 128の全文から再生成。元の符号化構成・店舗スキャナでの動作は未検証です。';}else if(validJan(p.jan)){value=p.jan;format=p.jan.length===13?'EAN13':'EAN8';label='JANのみの仮バーコードです。元カードとの同一性は未確認です。店舗スキャナで検証してください。';}else{el.innerHTML='<p>有効なJANがないため表示できません。</p>';return;}el.innerHTML='<svg role="img" aria-label="商品バーコード"></svg><p class="muted"></p>';try{JsBarcode(el.querySelector('svg'),value,{format,width:3,height:110,marginLeft:36,marginRight:36,marginTop:16,marginBottom:16,displayValue:true,fontSize:21,background:'#ffffff',lineColor:'#000000'});const svg=el.querySelector('svg');svg.setAttribute('viewBox',`0 0 ${parseFloat(svg.getAttribute('width'))} ${parseFloat(svg.getAttribute('height'))}`);el.querySelector('p').textContent=label;}catch{el.textContent='この形式は表示できません。読み取り元のデータを確認してください。';}}
-function detail(p){screen(`<button class="back" id="back">← 商品一覧</button><div class="eyebrow">PRODUCT DETAILS</div><h1>${esc(p.name)}</h1><div class="panel"><dl>${Object.entries(fields).filter(([k])=>k==='jan'||(k!=='name'&&p[k])).map(([k,label])=>`<dt>${label}</dt><dd>${esc(p[k]||'未登録')}${k.startsWith('price')&&p[k]?' 円':''}</dd>`).join('')}</dl></div><div class="actions"><button id="edit">編集する</button><button id="delete" class="danger">削除する</button></div>${sourceInfo(p)}<section class="panel"><h2>商品バーコード</h2><div class="barcode-box" id="barcode"></div><button id="expand" class="primary" style="width:100%">バーコードを大きく表示</button></section>`);barcode(p,'#barcode');$('#back').onclick=home;$('#edit').onclick=()=>editor(p);$('#delete').onclick=async()=>{if(await ask('商品を削除しますか？',`「${p.name}」を端末から削除します。`,'削除する'))try{await db.write([],p.id);toast('削除しました');home();}catch{toast('削除できませんでした');}};$('#expand').onclick=()=>expanded(p);}
+function detail(p){
+ const legacy=Object.entries(fields).filter(([k])=>!['name','jan'].includes(k)&&p[k]);
+ screen(`<button class="back" id="back">← 商品一覧</button><div class="eyebrow">PRODUCT DETAILS</div><h1>${esc(p.name)}</h1>
+ <div class="panel detail-management" id="detail-management"><div class="detail-management-line"><span class="detail-jan" aria-label="JANコード">${esc(p.jan||'未登録')}</span><label>基材：<input class="material-count" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8" aria-label="基材数" autocomplete="off" enterkeyhint="done"></label><button class="state-toggle" aria-label="〇✕切り替え"></button></div><span class="management-status" role="status"></span></div>
+ ${legacy.length?`<div class="panel"><dl>${legacy.map(([k,label])=>`<dt>${label}</dt><dd>${esc(p[k])}${k.startsWith('price')?' 円':''}</dd>`).join('')}</dl></div>`:''}
+ <div class="actions"><button id="edit">編集する</button><button id="delete" class="danger">削除する</button></div>${sourceInfo(p)}<section class="panel"><h2>商品バーコード</h2><div class="barcode-box" id="barcode"></div><button id="expand" class="primary" style="width:100%">バーコードを大きく表示</button></section>`);
+ bindManagement($('#detail-management'),p.id,saved=>{p=saved;});barcode(p,'#barcode');
+ const latest=()=>products.find(item=>item.id===p.id)||p;
+ $('#back').onclick=home;
+ $('#edit').onclick=async()=>{await managementQueue;editor(latest());};
+ $('#delete').onclick=async()=>{if(await ask('商品を削除しますか？',`「${p.name}」を端末から削除します。`,'削除する'))try{await managementQueue;await db.write([],p.id);toast('削除しました');home();}catch{toast('削除できませんでした');}};
+ $('#expand').onclick=async()=>{await managementQueue;expanded(latest());};
+}
+
 async function expanded(p){screen(`<section class="barcode-screen"><button class="back" id="back">← 商品詳細</button><h1>${esc(p.name)}</h1><p class="muted">画面の明るさを上げて、スキャナに向けてください。</p><div id="large-barcode" class="barcode-box full-barcode"></div><div class="notice">左右の白い余白も含めて提示してください。横向きにすると幅を広く使えます。</div></section>`);barcode(p,'#large-barcode');$('#back').onclick=()=>detail(p);const token=epoch;try{const lock=await navigator.wakeLock?.request('screen');if(token===epoch)wake=lock;else await lock?.release();}catch{}}
 async function exportData(){try{const rows=await db.all();const blob=new Blob([JSON.stringify({schemaVersion:1,exportedAt:new Date().toISOString(),products:rows},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`card-note-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}catch{toast('書き出しに失敗しました');}}
 async function importData(e){const f=e.target.files[0];if(!f)return;try{if(f.size>10*1024*1024)throw Error('ファイルは10MB以下にしてください');const incoming=parseImport(await f.text());const existing=await db.all();const duplicates=incoming.filter(p=>p.jan&&existing.some(x=>x.jan===p.jan)).length;if(!await ask('バックアップを読み込む',`${incoming.length}件中、同じJANの${duplicates}件はスキップし、新しい商品だけ追加します。`,'読み込む'))return;const now=new Date().toISOString();const add=incoming.filter(p=>!p.jan||!existing.some(x=>x.jan===p.jan)).map(p=>({...p,id:crypto.randomUUID(),createdAt:p.createdAt||now,updatedAt:p.updatedAt||now}));await db.write(add);toast(`${add.length}件を読み込みました`);home();}catch(err){toast('読み込めませんでした。'+err.message);}finally{e.target.value='';}}

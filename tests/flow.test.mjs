@@ -18,4 +18,14 @@ test('起動時カメラ要求→OCRフォーム→1回の保存で次のカメ�
  assert.equal(rows[0].enabled,false);assert.equal(rows[0].materialCount,'0');assert.equal(rows[0].createdAt,'2026-10-19T00:00:00Z');assert.equal(rows[0].name,'新しい商品名');
  failWrite=true;await assert.rejects(context.saveManagement('old',{enabled:true}),/保存領域/);assert.equal(rows[0].enabled,false);
  failWrite=false;await context.saveManagement('old',{materialCount:''});assert.equal(rows[0].materialCount,'');assert.equal(rows[0].enabled,false);
+ // The detail panel and inventory row share this actual event binding.
+ const input={value:''},toggle={setAttribute(name,value){this[name]=value;}},status={textContent:''};let gray;
+ const row={querySelector:selector=>({'.material-count':input,'.state-toggle':toggle,'.management-status':status})[selector],classList:{toggle(name,value){gray=value;}}};
+ let detailSnapshot;
+ context.bindManagement(row,'old',saved=>detailSnapshot=saved);
+ assert.equal(toggle.textContent,'✕');input.value='0';await input.onchange();assert.equal(rows[0].materialCount,'0');assert.equal(gray,true);
+ await toggle.onclick();assert.equal(rows[0].enabled,true);assert.equal(detailSnapshot.enabled,true);assert.equal(gray,true);
+ input.value='';await input.onchange();assert.equal(gray,false);assert.equal(rows[0].materialCount,'');
+ failWrite=true;await toggle.onclick();assert.equal(rows[0].enabled,true);assert.equal(toggle.textContent,'〇');assert.match(status.textContent,/保存できません/);
+ failWrite=false;await context.home();assert.doesNotMatch(elements.get('#list').innerHTML,/class="is-gray"/);assert.match(elements.get('#list').innerHTML,/aria-pressed="false"/);
 });
