@@ -1,3 +1,4 @@
+import {attachLongPress} from './gestures.js';
 import {frameSample,CaptureGate} from './scan-policy.js';
 import {fields,emptyProduct,validJan,validateProduct,parseImport,mergeScan,productDate,management,isGray,compareRegistered,compareInventory} from './core.js';
 import * as db from './db.js';
@@ -8,7 +9,7 @@ function toast(s){$('#toast').textContent=s;$('#toast').style.display='block';se
 function ask(title,message,ok='実行'){return new Promise(resolve=>{const d=$('#modal');$('#modal-title').textContent=title;$('#modal-message').textContent=message;$('#modal-ok').textContent=ok;const done=v=>{d.close();resolve(v);};$('#modal-ok').onclick=()=>done(true);$('#modal-cancel').onclick=()=>done(false);d.oncancel=e=>{e.preventDefault();done(false);};d.showModal();});}
 function stop(){epoch++;clearTimeout(timer);stream?.getTracks().forEach(t=>t.stop());stream=null;wake?.release().catch(()=>{});wake=null;}
 function screen(html){stop();app.className='';app.innerHTML=html;window.scrollTo(0,0);}
-async function home(){if(busy)return;currentImage=null;draft=null;screen('<p>商品を読み込み中…</p>');try{products=await db.all();}catch(e){app.innerHTML='<h1>保存領域を開けません</h1><p>通常のChromeで開き直してください。プライベートモードや端末の空き容量も確認してください。</p>';return;}app.className='list-page';app.innerHTML=`<div class="list-toolbar"><h1>商品一覧</h1><button id="scan" class="primary">＋ 読み取る</button></div><div class="search"><input id="search" type="search" placeholder="商品名・JANで検索" aria-label="商品名・JANで検索"></div><div class="inventory-heading"><h2>保存した商品 <span class="count">${products.length}件</span></h2><button id="sort-products">並べ替え</button></div><div id="list"></div><button id="manual">＋ 手入力で登録</button><footer><h2>データのバックアップ</h2><p class="muted">この端末のブラウザに保存されます。定期的にJSONを書き出してください。</p><div class="actions"><button id="export">書き出す</button><button id="import">読み込む</button></div><input class="file-input" id="backup" type="file" accept="application/json,.json"><p class="muted">端末内処理 · アカウント不要<br>店舗の公式アプリではありません。</p></footer>`;
+async function home(){if(busy)return;currentImage=null;draft=null;screen('<p>商品を読み込み中…</p>');try{products=await db.all();}catch(e){app.innerHTML='<h1>保存領域を開けません</h1><p>通常のChromeで開き直してください。プライベートモードや端末の空き容量も確認してください。</p>';return;}app.className='list-page';app.innerHTML=`<div class="list-toolbar"><h1>商品一覧</h1><button id="scan" class="primary">＋ 読み取る</button></div><div class="search"><input id="search" type="search" placeholder="商品名・JANで検索" aria-label="商品名・JANで検索"></div><div class="inventory-heading"><h2>保存した商品 <span class="count" id="inventory-count">${products.length}件</span></h2><button id="sort-products">並べ替え</button></div><div id="list"></div><button id="manual">＋ 手入力で登録</button><footer><h2>データのバックアップ</h2><p class="muted">この端末のブラウザに保存されます。定期的にJSONを書き出してください。</p><div class="actions"><button id="export">書き出す</button><button id="import">読み込む</button></div><input class="file-input" id="backup" type="file" accept="application/json,.json"><p class="muted">端末内処理 · アカウント不要<br>店舗の公式アプリではありません。</p></footer>`;
 let order=products.slice().sort(compareRegistered).map(p=>p.id);
 const list=()=>{
  const q=$('#search').value.normalize('NFKC').toLowerCase(),rank=new Map(order.map((id,i)=>[id,i]));
@@ -16,13 +17,18 @@ const list=()=>{
  $('#list').innerHTML=rows.length?`<table class="product-table"><caption class="sr-only">保存した商品。商品名を押すと詳細を表示します。</caption><tbody>${rows.map(p=>{
   const m=management(p);return `<tr data-product="${esc(p.id)}" class="${isGray(p)?'is-gray':''}"><td>
   <div class="product-name-scroll"><button class="product-link" data-id="${esc(p.id)}">${esc(p.name)}</button></div>
-  <div class="product-meta"><span>${esc(p.jan||'JAN未登録')}</span><small>${esc(productDate({createdAt:p.createdAt}))}</small></div>
-  <div class="product-controls"><span class="management-status" role="status"></span><label>基材：<input class="material-count" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8" value="${esc(m.materialCount)}" aria-label="${esc(p.name)}の基材数" autocomplete="off" enterkeyhint="done"></label><button class="state-toggle" aria-label="${esc(p.name)}の〇✕切り替え" aria-pressed="${!m.enabled}">${m.enabled?'〇':'✕'}</button></div>
+  <div class="product-meta"><span class="product-jan">${esc(p.jan||'JAN未登録')}</span><small>${esc(productDate({createdAt:p.createdAt}))}</small><label>基材：<input class="material-count" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8" value="${esc(m.materialCount)}" aria-label="${esc(p.name)}の基材数" autocomplete="off" enterkeyhint="done"></label><button class="state-toggle" aria-label="${esc(p.name)}の〇✕切り替え" aria-pressed="${!m.enabled}">${m.enabled?'〇':'✕'}</button></div><span class="management-status" role="status"></span>
   </td></tr>`;
  }).join('')}</tbody></table>`:`<div class="empty panel"><h2>${q?'一致する商品がありません':'まだ商品がありません'}</h2><p class="muted">${q?'検索する文字を変えてください。':'最初のプライスカードを登録しましょう。'}</p></div>`;
  document.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>detail(products.find(p=>p.id===b.dataset.id)));
  document.querySelectorAll('[data-product]').forEach(row=>{
   const id=row.dataset.product,input=row.querySelector('.material-count'),toggle=row.querySelector('.state-toggle'),status=row.querySelector('.management-status');
+  attachLongPress(row,async()=>{
+   const p=products.find(p=>p.id===id);if(!p)return;
+   if(!await ask('商品を削除しますか？',`「${p.name}」を端末から削除します。`,'削除する'))return;
+   try{await managementQueue;await db.write([],id);products=products.filter(p=>p.id!==id);order=order.filter(key=>key!==id);list();$('#inventory-count').textContent=`${products.length}件`;toast('削除しました');}
+   catch{toast('削除できませんでした。もう一度お試しください。');}
+  });
   const paint=p=>{const m=management(p);input.value=m.materialCount;toggle.textContent=m.enabled?'〇':'✕';toggle.setAttribute('aria-pressed',String(!m.enabled));row.classList.toggle('is-gray',isGray(p));};
   const save=async patch=>{
    const previous=products.find(p=>p.id===id);
