@@ -16,11 +16,11 @@ test('短いタップ・移動・キャンセル・欄外への移動では長�
   const s=setup();s.send('pointerdown');s.send(event,extra);s.tick();assert.equal(s.holds(),0);assert.equal(s.send('click'),false);
  }
 });
-test('基材や〇✕、右クリック、複数指、削除済み行は対象にしない',()=>{
+test('基在や〇✕、右クリック、複数指、削除済み行は対象にしない',()=>{
  for(const extra of [{target:{closest:()=>({})}},{button:2},{isPrimary:false}]){const s=setup();s.send('pointerdown',extra);s.tick();assert.equal(s.holds(),0);}
  const s=setup();s.send('pointerdown');s.row.isConnected=false;s.tick();assert.equal(s.holds(),0);
 });
-test('コンテキストメニューを抑止するが基材入力のメニューは妨げない',()=>{
+test('コンテキストメニューを抑止するが基在入力のメニューは妨げない',()=>{
  const s=setup();assert.equal(s.send('contextmenu'),true);assert.equal(s.send('contextmenu',{target:{closest:()=>({})}}),false);
 });
 

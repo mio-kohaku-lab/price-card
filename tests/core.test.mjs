@@ -24,7 +24,7 @@ test('バックアップから撮影日・読込日・登録日を復元し、�
  assert.equal(mergeScan(old,{...parseRegions({name:'再撮影'}),capturedAt:'2026-10-21T00:00:00.000Z'}).capturedAt,'2026-10-21T00:00:00.000Z');
 });
 
-test('グレー背景は✕または明示的な基材0。空欄は0にしない',()=>{
+test('グレー背景は✕または明示的な基在0。空欄は0にしない',()=>{
  for(const [p,expected] of [[{},false],[{materialCount:''},false],[{enabled:false},true],[{enabled:true,materialCount:'0'},true],[{enabled:false,materialCount:'3'},true],[{enabled:true,materialCount:'3'},false],[{materialCount:'00'},true]])assert.equal(isGray(p),expected);
  assert.equal(management({materialCount:'003'}).materialCount,'3');
  for(const materialCount of ['-1','1.5','abc','123456789',0])assert.throws(()=>management({materialCount}));

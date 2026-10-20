@@ -26,7 +26,7 @@ export function productDate(p){
 export function management(p){
  if(p.enabled!==undefined&&typeof p.enabled!=='boolean')throw Error('〇✕の形式が不正です');
  const count=p.materialCount??'';
- if(typeof count!=='string'||(count!==''&&!/^\d{1,8}$/.test(count)))throw Error('基材は空欄、または0以上の8桁以内の整数で入力してください');
+ if(typeof count!=='string'||(count!==''&&!/^\d{1,8}$/.test(count)))throw Error('基在は空欄、または0以上の8桁以内の整数で入力してください');
  return {enabled:p.enabled!==false,materialCount:count===''?'':String(Number(count))};
 }
 export function isGray(p){const m=management(p);return !m.enabled||m.materialCount==='0';}
