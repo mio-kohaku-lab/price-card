@@ -34,4 +34,19 @@ test('起動時一覧→カメラ要求→OCRフォーム→1回の保存で次�
  await elements.get('#sort-products').onclick();assert.deepEqual(JSON.parse(savedPreferences.get('card-note:inventory-order:v1')),['old','gray-new']);
  await context.home();view=elements.get('#list').innerHTML;assert.ok(view.indexOf('data-product="old"')<view.indexOf('data-product="gray-new"'));
  rows[0].enabled=false;failPreference=true;await elements.get('#sort-products').onclick();assert.match(elements.get('#toast').textContent,/保存できません/);assert.deepEqual(JSON.parse(savedPreferences.get('card-note:inventory-order:v1')),['old','gray-new']);
+
+ failPreference=false;context.categorySettings();
+ const names=['冷蔵','冷凍','常温','催事'];names.forEach((name,i)=>elements.get('#category-name-'+i).value=name);
+ elements.get('#category-settings').onsubmit({preventDefault(){}});await new Promise(setImmediate);
+ assert.deepEqual(JSON.parse(savedPreferences.get('card-note:category-names:v1')),names);
+ assert.match(html,/data-filter="日配"[^>]*>冷蔵/);assert.match(html,/data-filter="その他"[^>]*>催事/);
+ assert.equal(rows.find(p=>p.id==='old').category,'飲料');
+ context.editor(rows.find(p=>p.id==='old'));assert.match(html,/value="飲料" checked><span>冷凍/);
+ context.categorySettings();names.forEach((name,i)=>elements.get('#category-name-'+i).value=name);elements.get('#category-name-0').value='未選択';
+ elements.get('#category-settings').onsubmit({preventDefault(){}});assert.match(elements.get('#category-error').textContent,/以外/);
+ assert.deepEqual(JSON.parse(savedPreferences.get('card-note:category-names:v1')),names);
+ elements.get('#category-defaults').onclick();assert.equal(elements.get('#category-name-0').value,'日配');
+ assert.deepEqual(JSON.parse(savedPreferences.get('card-note:category-names:v1')),names);
+ failPreference=true;elements.get('#category-settings').onsubmit({preventDefault(){}});
+ assert.ok(elements.get('#category-error').textContent);assert.deepEqual(JSON.parse(savedPreferences.get('card-note:category-names:v1')),names);
 });

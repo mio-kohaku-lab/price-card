@@ -39,3 +39,5 @@ button,.button,.category-tabs span{border-radius:0!important;box-shadow:none!imp
 
 .list-page>footer .app-disclaimer{font-size:clamp(8px,2.25vw,11px);white-space:nowrap;overflow-x:auto}
 #install-panel summary::before{content:"▶";margin-right:4px;font-size:11px}#install-panel[open] summary::before{content:"▼"}
+
+.category-filters button,.category-tabs span{overflow-wrap:anywhere;white-space:normal}

@@ -46,3 +46,13 @@ export function restoreProductOrder(products,saved){
  const added=products.filter(p=>!seen.has(p.id)).sort(compareRegistered).map(p=>p.id);
  return [...added,...kept];
 }
+
+// Stored product category values remain stable when their display names change.
+export function validateCategoryNames(value){
+ if(!Array.isArray(value)||value.length!==4||value.some(n=>typeof n!=='string'))throw Error('カテゴリ名を4つ入力してください');
+ const names=value.map(n=>n.trim());
+ if(names.some(n=>!n||[...n].length>12))throw Error('カテゴリ名は1〜12文字で入力してください');
+ if(new Set(names).size!==4||names.some(n=>['全て','未選択'].includes(n)))throw Error('カテゴリ名は重複させず、「全て」「未選択」以外にしてください');
+ return names;
+}
+export function categoryLabel(value,names){return value===''?'未選択':value==='全て'?'全て':names[categories.indexOf(value)-1]||value;}

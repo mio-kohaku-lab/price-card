@@ -1,4 +1,4 @@
-export const VERSION='0.3.3';
+export const VERSION='0.4.0';
 export function installView(standalone,promptAvailable){
  return standalone?'standalone':promptAvailable?'ready':'unknown';
 }
