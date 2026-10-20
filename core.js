@@ -39,3 +39,10 @@ export function compareInventory(a,b){return Number(isGray(a))-Number(isGray(b))
 export const categories=['','日配','飲料','ドライ','その他'];
 export function categoryOf(p){const value=p.category??'';if(!categories.includes(value))throw Error('カテゴリが不正です');return value;}
 export function matchesCategory(p,filter){return filter==='全て'||categoryOf(p)===filter;}
+
+export function restoreProductOrder(products,saved){
+ const ids=new Set(products.map(p=>p.id)),seen=new Set();
+ const kept=Array.isArray(saved)?saved.filter(id=>typeof id==='string'&&ids.has(id)&&!seen.has(id)&&(seen.add(id),true)):[];
+ const added=products.filter(p=>!seen.has(p.id)).sort(compareRegistered).map(p=>p.id);
+ return [...added,...kept];
+}

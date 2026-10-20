@@ -1,6 +1,6 @@
 import {attachLongPress} from './gestures.js';
 import {frameSample,CaptureGate} from './scan-policy.js';
-import {fields,emptyProduct,validJan,validateProduct,parseImport,mergeScan,productDate,management,isGray,compareRegistered,compareInventory,categories,categoryOf,matchesCategory} from './core.js';
+import {fields,emptyProduct,validJan,validateProduct,parseImport,mergeScan,productDate,management,isGray,compareRegistered,compareInventory,categories,categoryOf,matchesCategory,restoreProductOrder} from './core.js';
 import * as db from './db.js';
 import {crop,decode,recognize,straighten,releaseOCR} from './recognition.js';
 const app=document.querySelector('#app');let products=[],stream,timer,epoch=0,busy=false,currentImage=null,draft=null,wake=null,sessionCount=0,lastSavedSample=null,captureSample=null,capturedAt='',categoryFilter='全て';
@@ -10,7 +10,9 @@ function ask(title,message,ok='実行'){return new Promise(resolve=>{const d=$('
 function stop(){epoch++;clearTimeout(timer);stream?.getTracks().forEach(t=>t.stop());stream=null;wake?.release().catch(()=>{});wake=null;}
 function screen(html){stop();app.className='';app.innerHTML=html;window.scrollTo(0,0);}
 async function home(){if(busy)return;currentImage=null;draft=null;screen('<p>商品を読み込み中…</p>');try{await managementQueue;products=await db.all();}catch(e){app.innerHTML='<h1>保存領域を開けません</h1><p>通常のChromeで開き直してください。プライベートモードや端末の空き容量も確認してください。</p>';return;}app.className='list-page';app.innerHTML=`<div class="list-toolbar"><h1>商品一覧</h1><button id="scan" class="primary">＋ 読み取る</button></div><div class="category-filters" role="group" aria-label="カテゴリで絞り込み">${['全て','日配','飲料','ドライ'].map(c=>`<button data-filter="${c}" aria-pressed="${categoryFilter===c}">${c}</button>`).join('')}</div><div class="inventory-heading"><h2>保存した商品 <span class="count" id="inventory-count">${products.length}件</span></h2><button id="sort-products">並べ替え</button></div><div id="list"></div><button id="manual">＋ 手入力で登録</button><footer><h2>データのバックアップ</h2><p class="muted">この端末のブラウザに保存されます。定期的にJSONを書き出してください。</p><div class="actions"><button id="export">書き出す</button><button id="import">読み込む</button></div><input class="file-input" id="backup" type="file" accept="application/json,.json"><p class="muted">端末内処理 · アカウント不要<br>店舗の公式アプリではありません。</p></footer>`;
-let order=products.slice().sort(compareRegistered).map(p=>p.id);
+let savedOrder=null;
+try{savedOrder=JSON.parse(localStorage.getItem('card-note:inventory-order:v1')||'null');}catch{toast('保存した並び順を読み込めませんでした。登録日順で表示します。');}
+let order=restoreProductOrder(products,savedOrder);
 const list=()=>{
  const q=categoryFilter!=='全て',rank=new Map(order.map((id,i)=>[id,i]));
  const rows=products.filter(p=>matchesCategory(p,categoryFilter)).sort((a,b)=>(rank.get(a.id)??Infinity)-(rank.get(b.id)??Infinity));
@@ -33,7 +35,13 @@ const list=()=>{
   bindManagement(row,id);
  });
 };
-$('#sort-products').onclick=async()=>{await managementQueue;order=products.slice().sort(compareInventory).map(p=>p.id);list();toast('白背景 → グレー背景、それぞれ登録日の新しい順に並べました');};
+$('#sort-products').onclick=async()=>{
+ await managementQueue;
+ const next=products.slice().sort(compareInventory).map(p=>p.id);
+ try{localStorage.setItem('card-note:inventory-order:v1',JSON.stringify(next));}
+ catch{toast('並び順を保存できませんでした。端末の空き容量や保存設定を確認してください。');return;}
+ order=next;list();toast('並び順を保存しました。次回もこの順番で表示します');
+};
 document.querySelectorAll('[data-filter]').forEach(button=>button.onclick=()=>{categoryFilter=button.dataset.filter;document.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.filter===categoryFilter)));list();});
 list();$('#scan').onclick=scanner;$('#manual').onclick=()=>editor({...emptyProduct(),barcodes:[]});$('#export').onclick=exportData;$('#import').onclick=()=>$('#backup').click();$('#backup').onchange=importData;
 }

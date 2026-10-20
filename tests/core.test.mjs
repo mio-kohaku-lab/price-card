@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {validJan,parseRegions,validateProduct,parseImport,mergeScan,productDate,management,isGray,compareInventory,categoryOf,matchesCategory} from '../core.js';
+import {validJan,parseRegions,validateProduct,parseImport,mergeScan,productDate,management,isGray,compareInventory,categoryOf,matchesCategory,restoreProductOrder} from '../core.js';
 test('JANチェックデジット、桁数、先頭ゼロ',()=>{for(const j of ['4977330003109','4971666489040','4903110775003','0000000000000'])assert.equal(validJan(j),true);for(const j of ['4977330003108','497733000310','abc'])assert.equal(validJan(j),false);});
 test('読み取りは商品名・JANのみ。旧項目は抽出しない',()=>{const p=parseRegions({name:'かわいや 黒焼\nポテト 1本',exclusive:'¥584',inclusive:'¥631)',dept:'13',bottom:'-011 4977330003109 -001'});for(const k of ['allowance','priceExclusive','priceInclusive','dept'])assert.equal(p[k],'');assert.equal(p.jan,'4977330003109');assert.equal(p.name,'かわいや 黒焼 ポテト 1本');});
 test('左の数値で補完しない、未知のバーコード全文からJANを推測しない',()=>{const p=parseRegions({bottom:'-120 4971666489040'},[{format:'CODE_128',rawValue:'0114977330003109001'}]);assert.equal(p.allowance,'');assert.equal(p.jan,'4971666489040');assert.equal(p.priceInclusive,'');});
@@ -49,4 +49,12 @@ test('カテゴリは未選択が初期値、指定4種を保存・復元し再�
   assert.equal(matchesCategory(p,'全て'),true);assert.equal(matchesCategory(p,'日配'),category==='日配');
  }
  assert.throws(()=>validateProduct({...base,category:'未知'}));assert.equal(mergeScan({...base,category:'日配'},{...base,category:''}).category,'');
+});
+
+test('保存順を復元し、削除ID・重複は除外、新規だけを登録日の新しい順で先頭追加',()=>{
+ const rows=[{id:'a',createdAt:'2026-01-01'},{id:'b',createdAt:'2026-01-02',enabled:false},{id:'c',createdAt:'2026-01-03'}];
+ assert.deepEqual(restoreProductOrder(rows,['a','removed','a','b']),['c','a','b']);
+ assert.deepEqual(restoreProductOrder(rows,['a','c','b']),['a','c','b']);
+ assert.deepEqual(restoreProductOrder(rows,null),['c','b','a']);
+ assert.deepEqual(restoreProductOrder(rows,{}),['c','b','a']);
 });
