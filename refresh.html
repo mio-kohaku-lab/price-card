@@ -1,9 +1,9 @@
 <!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>カードノートの更新</title>
 <style>body{font:18px/1.7 system-ui,sans-serif;background:#f3f6f5;color:#203b3a;max-width:600px;margin:40px auto;padding:20px}button,a{display:block;padding:16px;margin:20px 0;border-radius:12px;background:#12605b;color:white;font:inherit;border:0}button:disabled{opacity:.5}[hidden]{display:none}</style>
-<h1>カードノートの更新</h1><p>Ver.0.3.1を準備します。登録した商品データは削除しません。編集中の商品は先に保存してください。</p><p>通信できる状態で実行してください。初回は約33MBのダウンロードがあります。</p><button id="refresh">最新版を準備する</button><p id="status" role="status"></p><a id="open" href="./?updated=0.3.1" hidden>最新版を開く</a>
+<h1>カードノートの更新</h1><p>Ver.0.3.2を準備します。登録した商品データは削除しません。編集中の商品は先に保存してください。</p><p>通信できる状態で実行してください。初回は約33MBのダウンロードがあります。</p><button id="refresh">最新版を準備する</button><p id="status" role="status"></p><a id="open" href="./?updated=0.3.2" hidden>最新版を開く</a>
 <p>この操作は表示の更新です。Chromeの「インストール済み」判定をリセットするものではありません。</p>
 <script type="module">
-import {prepareUpdate} from './install.js?v=0.3.1';
+import {prepareUpdate} from './install.js?v=0.3.2';
 const button=document.querySelector('#refresh'),status=document.querySelector('#status');
-button.onclick=async()=>{button.disabled=true;status.textContent='更新ファイルを取得しています…';try{await prepareUpdate();status.textContent='Ver.0.3.1の準備ができました。下のボタンで開いてください。';document.querySelector('#open').hidden=false;}catch(e){status.textContent=e.message;}finally{button.disabled=false;}};
+button.onclick=async()=>{button.disabled=true;status.textContent='更新ファイルを取得しています…';try{await prepareUpdate();status.textContent='Ver.0.3.2の準備ができました。下のボタンで開いてください。';document.querySelector('#open').hidden=false;}catch(e){status.textContent=e.message;}finally{button.disabled=false;}};
 </script></html>
