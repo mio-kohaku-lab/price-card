@@ -1,15 +1,16 @@
+import {createJanPdf,PDF_LIMIT} from './jan-pdf.js';
 import {attachLongPress} from './gestures.js';
 import {frameSample,CaptureGate} from './scan-policy.js';
 import {fields,emptyProduct,validJan,validateProduct,parseImport,mergeScan,productDate,management,isGray,compareRegistered,compareInventory,categories,categoryOf,matchesCategory,restoreProductOrder} from './core.js';
 import * as db from './db.js';
 import {crop,decode,recognize,straighten,releaseOCR} from './recognition.js';
-const app=document.querySelector('#app');let products=[],stream,timer,epoch=0,busy=false,currentImage=null,draft=null,wake=null,sessionCount=0,lastSavedSample=null,captureSample=null,capturedAt='',categoryFilter='全て';
+const app=document.querySelector('#app');let products=[],stream,timer,epoch=0,busy=false,currentImage=null,draft=null,wake=null,sessionCount=0,lastSavedSample=null,captureSample=null,capturedAt='',categoryFilter='全て',pdfUrl=null;
 const $=s=>document.querySelector(s);const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(s){$('#toast').textContent=s;$('#toast').style.display='block';setTimeout(()=>$('#toast').style.display='none',4500);}
 function ask(title,message,ok='実行'){return new Promise(resolve=>{const d=$('#modal');$('#modal-title').textContent=title;$('#modal-message').textContent=message;$('#modal-ok').textContent=ok;const done=v=>{d.close();resolve(v);};$('#modal-ok').onclick=()=>done(true);$('#modal-cancel').onclick=()=>done(false);d.oncancel=e=>{e.preventDefault();done(false);};d.showModal();});}
 function stop(){epoch++;clearTimeout(timer);stream?.getTracks().forEach(t=>t.stop());stream=null;wake?.release().catch(()=>{});wake=null;}
-function screen(html){stop();app.className='';app.innerHTML=html;window.scrollTo(0,0);}
-async function home(){if(busy)return;currentImage=null;draft=null;screen('<p>商品を読み込み中…</p>');try{await managementQueue;products=await db.all();}catch(e){app.innerHTML='<h1>保存領域を開けません</h1><p>通常のChromeで開き直してください。プライベートモードや端末の空き容量も確認してください。</p>';return;}app.className='list-page';app.innerHTML=`<div class="list-toolbar"><h1>商品一覧</h1><button id="scan" class="primary">＋ 読み取る</button></div><div class="category-filters" role="group" aria-label="カテゴリで絞り込み">${['全て','日配','飲料','ドライ'].map(c=>`<button data-filter="${c}" aria-pressed="${categoryFilter===c}">${c}</button>`).join('')}</div><div class="inventory-heading"><h2>保存した商品 <span class="count" id="inventory-count">${products.length}件</span></h2><button id="sort-products">並べ替え</button></div><div id="list"></div><button id="manual">＋ 手入力で登録</button><footer><h2>データのバックアップ</h2><p class="muted">この端末のブラウザに保存されます。定期的にJSONを書き出してください。</p><div class="actions"><button id="export">書き出す</button><button id="import">読み込む</button></div><input class="file-input" id="backup" type="file" accept="application/json,.json"><p class="muted">端末内処理 · アカウント不要<br>店舗の公式アプリではありません。</p></footer>`;
+function screen(html){if(pdfUrl){URL.revokeObjectURL(pdfUrl);pdfUrl=null;}stop();app.className='';app.innerHTML=html;window.scrollTo(0,0);}
+async function home(){if(busy)return;currentImage=null;draft=null;screen('<p>商品を読み込み中…</p>');try{await managementQueue;products=await db.all();}catch(e){app.innerHTML='<h1>保存領域を開けません</h1><p>通常のChromeで開き直してください。プライベートモードや端末の空き容量も確認してください。</p>';return;}app.className='list-page';app.innerHTML=`<div class="list-toolbar"><h1>商品一覧</h1><button id="scan" class="primary">＋ 読み取る</button></div><div class="category-filters" role="group" aria-label="カテゴリで絞り込み">${['全て','日配','飲料','ドライ'].map(c=>`<button data-filter="${c}" aria-pressed="${categoryFilter===c}">${c}</button>`).join('')}</div><div class="inventory-heading"><h2>保存した商品 <span class="count" id="inventory-count">${products.length}件</span></h2><button id="sort-products">並べ替え</button></div><div id="list"></div><div class="list-add-actions"><button id="manual">＋ 手入力で登録</button><button id="pdf-export">JANを出力</button></div><footer><h2>データのバックアップ</h2><p class="muted">この端末のブラウザに保存されます。定期的にJSONを書き出してください。</p><div class="actions"><button id="export">書き出す</button><button id="import">読み込む</button></div><input class="file-input" id="backup" type="file" accept="application/json,.json"><p class="muted">端末内処理 · アカウント不要<br>店舗の公式アプリではありません。</p></footer>`;
 let savedOrder=null;
 try{savedOrder=JSON.parse(localStorage.getItem('card-note:inventory-order:v1')||'null');}catch{toast('保存した並び順を読み込めませんでした。登録日順で表示します。');}
 let order=restoreProductOrder(products,savedOrder);
@@ -43,7 +44,7 @@ $('#sort-products').onclick=async()=>{
  order=next;list();toast('並び順を保存しました。次回もこの順番で表示します');
 };
 document.querySelectorAll('[data-filter]').forEach(button=>button.onclick=()=>{categoryFilter=button.dataset.filter;document.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.filter===categoryFilter)));list();});
-list();$('#scan').onclick=scanner;$('#manual').onclick=()=>editor({...emptyProduct(),barcodes:[]});$('#export').onclick=exportData;$('#import').onclick=()=>$('#backup').click();$('#backup').onchange=importData;
+list();$('#pdf-export').onclick=pdfSelection;$('#scan').onclick=scanner;$('#manual').onclick=()=>editor({...emptyProduct(),barcodes:[]});$('#export').onclick=exportData;$('#import').onclick=()=>$('#backup').click();$('#backup').onchange=importData;
 }
 function bindManagement(row,id,onSaved=()=>{}){
  const input=row.querySelector('.material-count'),toggle=row.querySelector('.state-toggle'),status=row.querySelector('.management-status');
@@ -164,9 +165,36 @@ function detail(p){
 }
 
 async function expanded(p){screen(`<section class="barcode-screen"><button class="back" id="back">← 商品詳細</button><h1>${esc(p.name)}</h1><p class="muted">画面の明るさを上げて、スキャナに向けてください。</p><div id="large-barcode" class="barcode-box full-barcode"></div><div class="notice">左右の白い余白も含めて提示してください。横向きにすると幅を広く使えます。</div></section>`);barcode(p,'#large-barcode');$('#back').onclick=()=>detail(p);const token=epoch;try{const lock=await navigator.wakeLock?.request('screen');if(token===epoch)wake=lock;else await lock?.release();}catch{}}
+async function pdfSelection(){
+ await managementQueue;let rows;
+ try{rows=await db.all();}catch{toast('商品を読み込めませんでした');return;}
+ let saved=null;try{saved=JSON.parse(localStorage.getItem('card-note:inventory-order:v1')||'null');}catch{}
+ const order=restoreProductOrder(rows,saved),byId=new Map(rows.map(p=>[p.id,p]));rows=order.map(id=>byId.get(id));
+ screen(`<button class="back" id="pdf-back">← 商品一覧</button><h1>JANを出力</h1><p class="muted">商品を選んで、A4縦のPDFに保存します。1ページ10商品・最大${PDF_LIMIT}商品。白黒で印刷できます。</p><div class="actions pdf-tools"><button id="pdf-all">全て選択</button><button id="pdf-clear">選択解除</button></div><p id="pdf-count" role="status"></p><div class="pdf-selection">${rows.length?rows.map(p=>`<label class="pdf-item"><input type="checkbox" data-pdf-id="${esc(p.id)}" ${validJan(p.jan)?'':'disabled'}><span><strong>${esc(p.name)}</strong><small>${esc(p.jan||'JAN未登録')} ${validJan(p.jan)?'':'（出力不可：JANを確認してください）'}</small></span></label>`).join(''):'<p>保存した商品がありません。</p>'}</div><div class="entry-actions"><button id="pdf-save" class="primary" disabled>PDFで保存</button></div><p id="pdf-status" role="status"></p><div id="pdf-result"></div><p class="muted">JANのみのEANバーコードを生成します。元のプライスカードと同じ形式とは限りません。印刷はA4・実際のサイズ（100%）を選び、店舗のスキャナで確認してください。</p>`);
+ app.className='pdf-page';const token=epoch,selected=new Set();let generating=false;
+ const boxes=()=>[...document.querySelectorAll('[data-pdf-id]')];
+ const update=()=>{$('#pdf-count').textContent=`${selected.size}件選択 / ${Math.ceil(selected.size/10)}ページ`;$('#pdf-save').disabled=generating||!selected.size||selected.size>PDF_LIMIT;};
+ boxes().forEach(box=>box.onchange=()=>{if(box.checked)selected.add(box.dataset.pdfId);else selected.delete(box.dataset.pdfId);update();});
+ $('#pdf-back').onclick=home;
+ $('#pdf-all').onclick=()=>{selected.clear();boxes().forEach(box=>{box.checked=!box.disabled&&selected.size<PDF_LIMIT;if(box.checked)selected.add(box.dataset.pdfId);});update();};
+ $('#pdf-clear').onclick=()=>{selected.clear();boxes().forEach(box=>box.checked=false);update();};
+ $('#pdf-save').onclick=async()=>{
+  if(generating||!selected.size)return;generating=true;update();boxes().forEach(b=>b.disabled=true);$('#pdf-all').disabled=$('#pdf-clear').disabled=true;
+  try{
+   const chosen=rows.filter(p=>selected.has(p.id));
+   const blob=await createJanPdf(chosen,(done,total)=>{if(token===epoch)$('#pdf-status').textContent=`PDF作成中… ${done}/${total}`;},()=>token===epoch);
+   if(token!==epoch)return;if(pdfUrl)URL.revokeObjectURL(pdfUrl);pdfUrl=URL.createObjectURL(blob);
+   const now=new Date(),date=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+   $('#pdf-result').innerHTML=`<a class="button primary" id="pdf-download" download="card-note-JAN-${date}.pdf" href="${pdfUrl}">PDFをダウンロード</a> <a class="button" href="${pdfUrl}" target="_blank" rel="noopener">PDFを開く</a>`;
+   $('#pdf-status').textContent='PDFを作成しました。保存が始まらない場合は「PDFをダウンロード」を押してください。';$('#pdf-download').click();
+  }catch(e){if(token===epoch)$('#pdf-status').textContent='PDFを作成できませんでした。'+e.message;}
+  finally{generating=false;if(token===epoch){boxes().forEach(b=>b.disabled=!validJan(byId.get(b.dataset.pdfId).jan));$('#pdf-all').disabled=$('#pdf-clear').disabled=false;update();}}
+ };
+ update();
+}
 async function exportData(){try{const rows=await db.all();const blob=new Blob([JSON.stringify({schemaVersion:1,exportedAt:new Date().toISOString(),products:rows},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`card-note-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}catch{toast('書き出しに失敗しました');}}
 async function importData(e){const f=e.target.files[0];if(!f)return;try{if(f.size>10*1024*1024)throw Error('ファイルは10MB以下にしてください');const incoming=parseImport(await f.text());const existing=await db.all();const duplicates=incoming.filter(p=>p.jan&&existing.some(x=>x.jan===p.jan)).length;if(!await ask('バックアップを読み込む',`${incoming.length}件中、同じJANの${duplicates}件はスキップし、新しい商品だけ追加します。`,'読み込む'))return;const now=new Date().toISOString();const add=incoming.filter(p=>!p.jan||!existing.some(x=>x.jan===p.jan)).map(p=>({...p,id:crypto.randomUUID(),createdAt:p.createdAt||now,updatedAt:p.updatedAt||now}));await db.write(add);toast(`${add.length}件を読み込みました`);home();}catch(err){toast('読み込めませんでした。'+err.message);}finally{e.target.value='';}}
 $('#home-link').onclick=e=>{e.preventDefault();home();};document.addEventListener('visibilitychange',()=>{if(document.hidden&&stream){stop();if($('#start')){$('#start').hidden=false;$('#start').disabled=false;$('#capture').disabled=true;$('#camera-status').textContent='カメラを停止しました。再開するにはカメラ起動を押してください。';}}});window.addEventListener('pagehide',()=>{stop();releaseOCR().catch(()=>{});});
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(()=>toast('オフライン準備に失敗しました。オンラインで再読み込みしてください。'));
-async function boot(){try{products=await db.all();scanner();}catch{await home();}}
+async function boot(){await home();}
 boot();

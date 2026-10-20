@@ -29,5 +29,5 @@ test('更新はworkerの実バージョンを確認する。旧版なら成功�
  context.setTimeout=setTimeout;context.clearTimeout=clearTimeout;
  context.MessageChannel=class{constructor(){this.port1={close(){}};this.port2={reply:data=>this.port1.onmessage({data})};}};
  context.navigator.serviceWorker={register:async()=>({update:async()=>{},active:{state:'activated',postMessage:(message,ports)=>ports[0].reply(version)}})};
- await assert.rejects(context.prepareUpdate(),/更新待ち/);version='0.2.15';await context.prepareUpdate();
+ await assert.rejects(context.prepareUpdate(),/更新待ち/);version='0.3.0';await context.prepareUpdate();
 });
